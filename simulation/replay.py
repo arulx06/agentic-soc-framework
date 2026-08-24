@@ -31,6 +31,42 @@ class ReplayOrderingError(RuntimeError):
     pass
 
 
+class ReplayCancelledError(RuntimeError):
+    """Raised inside the run loop when the controller stops/restarts a
+    replay at a safe window boundary."""
+
+
+class ReplayControl:
+    """Minimal cooperative control surface for external controllers.
+
+    ``pause_event`` is a threading.Event: SET means running, CLEARED means
+    paused. ``step_limit`` optionally caps how many windows may complete
+    before the runner auto-pauses (step-one-window semantics)."""
+
+    def __init__(self, start_paused: bool = False) -> None:
+        import threading
+
+        self.pause_event = threading.Event()
+        if start_paused:
+            self.pause_event.clear()
+        else:
+            self.pause_event.set()
+        self.step_limit: int | None = None
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+        self.pause_event.set()
+
+    def checkpoint(self, windows_completed: int) -> None:
+        if self._cancelled:
+            raise ReplayCancelledError("replay cancelled by controller")
+        if self.step_limit is not None and windows_completed >= self.step_limit:
+            self.pause_event.clear()
+        if not self.pause_event.is_set():
+            self.pause_event.wait()
+
+
 class _Peeker:
     __slots__ = ("_it", "_next", "_advanced")
 
@@ -157,9 +193,25 @@ class ReplayRunner:
         self.findings_behavior_absence = 0
 
     # ------------------------------------------------------------------ run
-    def run(self) -> dict:
+    def run(self, event_sink=None, control: "ReplayControl | None" = None) -> dict:
+        """Run the bounded chronological replay.
+
+        ``event_sink(event_type: str, **data)`` is an optional observation
+        hook invoked at precise points; it MUST remain side-effect-free with
+        respect to scientific state (Stage-3A streaming uses it).
+        ``control`` optionally gates progression between windows for
+        pause/step semantics. Both default to None and leave behaviour
+        unchanged.
+        """
         accepted = {"network": 0, "behavior": 0}
 
+        def emit(event_type: str, **data) -> None:
+            if event_sink is not None:
+                event_sink(event_type, **data)
+
+        emit("REPLAY_STARTED", source_mode=self.source_mode)
+
+        windows_completed = 0
         while True:
             live_heads = [h for h in self.heads.values() if h.has_next()]
             if not live_heads:
@@ -173,6 +225,7 @@ class ReplayRunner:
                     f"sorted streams produced window {target} after "
                     f"{self.last_processed_wid}; ordering violation"
                 )
+            emit("WINDOW_STARTED", window_id=target)
 
             net_rows = self._drain(self.heads["network"], target)
             beh_rows = self._drain(self.heads["behavior"], target)
@@ -193,7 +246,25 @@ class ReplayRunner:
                     )
                     self.findings_network += len(findings)
                     for finding in findings:
-                        if self.gateway.submit(finding):
+                        emit(
+                            "NETWORK_FINDING",
+                            window_id=target,
+                            entity_id=finding.entity_id,
+                            payload={
+                                "attack_probability": finding.attack_probability,
+                                "predicted_class": finding.predicted_class,
+                                "confidence": finding.confidence,
+                                "timestamp_utc": finding.timestamp_utc,
+                            },
+                        )
+                        accepted_flag = self.gateway.submit(finding)
+                        emit(
+                            "GATEWAY_ACCEPTED" if accepted_flag else "GATEWAY_REJECTED",
+                            window_id=target,
+                            entity_id=finding.entity_id,
+                            payload={"evidence_kind": "network"},
+                        )
+                        if accepted_flag:
                             accepted["network"] += 1
 
             if self.profiler is not None:
@@ -207,13 +278,33 @@ class ReplayRunner:
                     )
                     if finding is None:
                         continue
-                    if getattr(finding, "explanation", "").startswith(
+                    is_absence = getattr(finding, "explanation", "").startswith(
                         "unexpected_absence"
-                    ):
+                    )
+                    if is_absence:
                         self.findings_behavior_absence += 1
                     else:
                         self.findings_behavior_observed += 1
-                    if self.gateway.submit(finding):
+                    emit(
+                        "BEHAVIOR_FINDING",
+                        window_id=target,
+                        entity_id=finding.entity_id,
+                        payload={
+                            "deviation_score": finding.deviation_score,
+                            "profile_type": finding.profile_type,
+                            "confidence": finding.confidence,
+                            "explanation": finding.explanation,
+                            "timestamp_utc": finding.timestamp_utc,
+                        },
+                    )
+                    accepted_flag = self.gateway.submit(finding)
+                    emit(
+                        "GATEWAY_ACCEPTED" if accepted_flag else "GATEWAY_REJECTED",
+                        window_id=target,
+                        entity_id=finding.entity_id,
+                        payload={"evidence_kind": "behavior"},
+                    )
+                    if accepted_flag:
                         accepted["behavior"] += 1
 
             self.abm.current_window_id = target
@@ -223,6 +314,10 @@ class ReplayRunner:
             if self.min_processed_wid is None:
                 self.min_processed_wid = target
             self.last_processed_wid = target
+            windows_completed += 1
+            emit("WINDOW_COMPLETED", window_id=target)
+            if control is not None:
+                control.checkpoint(windows_completed)
             self._pace(target)
 
         summary = {

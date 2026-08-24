@@ -1,14 +1,14 @@
 """Shared fixtures: synthetic bounded PCAP/PCAPNG/NDJSON builders.
 
 These let parser, windowing and feature tests run without the ~250 GB local
-dataset. Real-data integration tests live in test_raw_sessions.py and skip
-clearly when the dataset is absent.
+dataset. Real-data integration tests live in test_raw_sessions.py.
 """
 
 from __future__ import annotations
 
 import struct
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -17,7 +17,25 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+# Deterministic resolution for the legacy suite's plain
+# ``from conftest import ...`` statements: this directory must precede any
+# Stage-3A subdirectory on sys.path (importlib import-mode never inserts it
+# automatically).
+TESTS_DIR = Path(__file__).resolve().parent
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+
 NS = 1_000_000_000
+
+# Narrow suite-level filter for ONE diagnosed upstream deprecation:
+# joblib 1.5.3 assigns to array.shape while unpickling (deprecated by
+# NumPy 2.5). Exact message + category only; see
+# docs/stage3a_fastapi_backend.md §13. Remove when Joblib is fixed.
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    message=r"^Setting the shape on a NumPy array has been deprecated",
+)
 
 
 def mac_bytes(mac: str) -> bytes:

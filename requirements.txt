@@ -7,3 +7,9 @@ matplotlib
 seaborn
 pytest
 pyarrow
+
+# Stage-3A backend (added; versions as verified in the working environment:
+# fastapi 0.141.1 / pydantic 2.13.4 / uvicorn (latest) / httpx 0.28.1)
+fastapi
+uvicorn[standard]
+httpx

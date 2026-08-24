@@ -60,6 +60,19 @@ python scripts/datasense_pipeline.py demo-direct-raw --session <id> \
     --network-model ... --behavior-model ...   # same path straight from raw
 ```
 
+## Stage-3A FastAPI backend (versioned)
+
+```bash
+pip install fastapi "uvicorn[standard]" httpx     # backend deps
+python -m uvicorn backend.app.main:app --reload   # start API (dev)
+python -m pytest tests/stage3_api -q -ra          # Stage-3A tests
+```
+
+Routes live under `/api/v1/` (health, sessions, replay lifecycle + controls,
+device-state, both graphs, DEVICE_ONLY SREP, saved snapshots, WebSocket
+events). Contracts are versioned Pydantic models; ground truth never enters
+scientific payloads. Docs: `docs/stage3a_fastapi_backend.md`.
+
 Chain: features -> Findings -> FindingGateway -> Device ABM + G_topology /
 G_communication -> SREP (DEVICE_ONLY; simulation parameters in `config.py`).
 Labels are evaluation-only and cannot enter runtime findings.

@@ -464,18 +464,24 @@ python scripts/datasense_extract.py extract --profile auto
 # then benign_whole-network3 (largest single job), ddos/dos last.
 ```
 
-Expensive commands intentionally NOT run (current reality): the complete
-250 GB extraction; full DDoS/DoS extraction; research-scale hyperparameter
-search; research-grade model training; a complete research replay across all
-extracted sessions; and any Stage 3 application/orchestration work. The
-genuine benign capture HAS been extracted and used for smoke training, so it
-no longer appears in this list.
+Expensive commands intentionally NOT run (Stage-2 closure reality): the
+complete 250 GB extraction; full DDoS/DoS extraction; research-scale
+hyperparameter search; research-grade model training; and a complete
+research replay across all extracted sessions. The genuine benign capture
+HAS been extracted (~190.6 MB peak RSS) and used for smoke behavioural
+training, so it no longer appears in this list.
+
+At Stage-2 closure, no Stage-3 application layer had been implemented.
+The subsequently implemented FastAPI layer is documented separately in
+`docs/stage3a_fastapi_backend.md`.
 
 ## 14. Tests
 
-The full suite (Prompt 1 + Prompt 2 + closure-pass tests) currently
-stands at **172 tests, all passing, zero skips and zero warnings**
-(`python -m pytest tests -q -ra`). Coverage beyond the earlier list: bounded-fan-in external
+The Stage-1/2 scientific suite (`python -m pytest tests --ignore=tests/stage3_api
+-q -ra`) stands at **172 tests, all passing, zero skips and zero warnings**.
+These are the Prompt 1 / Prompt 2 / closure-pass tests only — the 50 Stage-3A
+API tests documented in `docs/stage3a_fastapi_backend.md` are counted
+separately (combined run: 222). Coverage beyond the earlier list: bounded-fan-in external
 merge (open-reader bound, multi-pass, failure/abandonment cleanup), benign-
 only behavioural-training enforcement (unit + CLI), runtime observation-mask
 enforcement and invariance, end-to-end benign chronological blocks, integer
@@ -518,10 +524,11 @@ the dataset is absent.
 5. Behavioural coverage remains sensor-only by dataset design; non-sensor
    devices keep `behavior_supported=False` (no behaviour-risk concept exists
    at this stage).
-6. The benign capture is 397 MB / 12 h; it is supported by design but was not
-   extracted here (execution limit).
+6. The benign capture (397 MB / 12 h) HAS been extracted with the low
+    profile at ≈ **190.6 MB peak RSS** and used for smoke behavioural
+    training (see §12); research-scale reuse beyond that remains future work.
 7. Raw-file sha256 provenance is not yet computed (multi-hour hashing deferred,
-   consistent with the raw audit §13 note).
+    consistent with the raw audit §13 note).
 
 ## 16. Downstream interfaces (for the next prompt)
 

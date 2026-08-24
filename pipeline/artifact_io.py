@@ -1,12 +1,13 @@
 """Shared artifact-I/O helper for model persistence.
 
 Ownership contract: ``load_joblib`` is the single controlled joblib.load
-entry point for model artifacts. It narrowly filters ONE upstream cosmetic
-deprecation (joblib 1.5.3 setting ``array.shape`` during unpickle, which
-NumPy 2.5 deprecates) at this exact call site. No broad scikit-learn, NumPy
-or Joblib warning suppression exists anywhere in the project, and artifact /
-schema version errors always propagate. Remove the filter once a
-Joblib release compatible with NumPy >= 2.5's array-shape policy is adopted.
+entry point for model artifacts. It idempotently installs ONE narrow
+warning filter (joblib 1.5.3 assigning to ``array.shape`` while unpickling,
+deprecated by NumPy 2.5) into whichever thread performs the load, because
+pytest and worker threads each maintain their own warning-filter state.
+No broad scikit-learn / NumPy / Joblib suppression exists; artifact/schema
+version errors always propagate. Remove this once Joblib is compatible
+with NumPy >= 2.5's array-shape policy.
 """
 
 from __future__ import annotations
@@ -21,15 +22,32 @@ _JOBLIB_SHAPE_DEPRECATION = (
 )
 
 
-def load_joblib(path: Path):
-    with warnings.catch_warnings():
+def _filter_entry_present() -> bool:
+    for entry in warnings.filters:
+        try:
+            action, msg, cat = entry[0], entry[1], entry[2]
+        except Exception:
+            continue
+        if action != "ignore" or cat is not DeprecationWarning:
+            continue
+        pattern = getattr(msg, "pattern", msg)
+        if pattern == _JOBLIB_SHAPE_DEPRECATION:
+            return True
+    return False
+
+
+def install_filter() -> None:
+    if not _filter_entry_present():
         warnings.filterwarnings(
             "ignore",
             category=DeprecationWarning,
-            module=r"joblib\.numpy_pickle",
             message=_JOBLIB_SHAPE_DEPRECATION,
         )
-        return joblib.load(Path(path))
+
+
+def load_joblib(path: Path):
+    install_filter()
+    return joblib.load(Path(path))
 
 
 def dump_joblib(obj, path: Path) -> Path:
@@ -37,3 +55,6 @@ def dump_joblib(obj, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(obj, path)
     return path
+
+
+install_filter()
