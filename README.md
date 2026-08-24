@@ -45,4 +45,22 @@ python scripts/datasense_extract.py read-store --session <id>
 
 # INTERNAL FEATURE VALIDATION vs vendor CSV (optional)
 python evaluation/datasense_vendor_validation.py
+
+## Downstream pipeline (Prompt 2)
+
+Models consume only the raw-derived feature records above:
+
+```bash
+python scripts/datasense_pipeline.py train-network --session <ids>      # RF detector (smoke)
+python scripts/datasense_pipeline.py train-behavior --session <benign>  # sensor profiles
+python scripts/datasense_pipeline.py replay-store --session <id> \
+    --network-model models/saved_models/network_detector_v1_smoke.joblib \
+    --behavior-model models/saved_models/behavior_profiler_v1_smoke.joblib
+python scripts/datasense_pipeline.py demo-direct-raw --session <id> \
+    --network-model ... --behavior-model ...   # same path straight from raw
+```
+
+Chain: features -> Findings -> FindingGateway -> Device ABM + G_topology /
+G_communication -> SREP (DEVICE_ONLY; simulation parameters in `config.py`).
+Labels are evaluation-only and cannot enter runtime findings.
 ```

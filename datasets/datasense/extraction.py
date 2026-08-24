@@ -50,11 +50,12 @@ from datasets.datasense.network_features import (
     NetworkWindowManager,
     empty_network_row,
 )
-from datasets.datasense.ndjson_reader import iter_mqtt_events
+from datasets.datasense.ndjson_reader import iter_mqtt_events, parse_telemetry_line
 from datasets.datasense.pcap_reader import iter_packets
+from datasets.datasense.window_sort import WindowSorter
 from datasets.datasense.profiles import OperationalSettings, resolve_profile
 from datasets.datasense.versions import REQUIRED_VERSIONS
-from datasets.datasense.windowing import WindowGrid
+from datasets.datasense.windowing import WindowGrid, iso_utc_from_ns
 
 logger = logging.getLogger(__name__)
 
@@ -322,6 +323,13 @@ def iter_behavior_rows(
     Label-independent materialization: the rectangle covers ALL inventory
     sensors with behavior_supported=True over the telemetry-observed window
     span, regardless of any target metadata.
+
+    Recorded DataSense telemetry is NOT guaranteed monotonic — the 12 h
+    benign capture physically interleaves two time-streams (verified during
+    benign extraction). Events therefore pass once through the bounded-chunk
+    external sorter keyed by window_id before the watermark manager; the
+    hard-fail lateness guarantee stays meaningful and memory remains
+    O(sort_chunk_rows).
     """
     if not session.raw_json_path or not Path(session.raw_json_path).is_file():
         raise FileNotFoundError(f"raw json missing for {session.scenario_id}")
@@ -337,19 +345,85 @@ def iter_behavior_rows(
     presence = PresenceBitmap()
 
     def generate():
+        import json as _json
+
+        sorter = WindowSorter(chunk_rows=50_000)
+
+        # OWNERSHIP: this wrapper owns the sorter's full lifecycle. Every
+        # exit path — successful completion, raw-source failure, spill
+        # failure, parse/reconstruction failure, or early generator closure
+        # by the consumer — removes all spilled temporary files via the
+        # finally block below. (Direct WindowSorter users remain responsible
+        # for calling cleanup() themselves; see window_sort docs.)
+
+        def sortable(event):
+            wid, _ = grid.assign(event.ts_ns, clock_tolerance_ns)
+            payload = {
+                k: getattr(event, k)
+                for k in (
+                    "ts_ns",
+                    "internal_device_name",
+                    "application",
+                    "ip",
+                    "mac",
+                    "full_id",
+                    "topic",
+                    "message_type",
+                    "message_value",
+                    "qos",
+                    "retained",
+                    "duplicate",
+                    "message_id",
+                )
+            }
+            return {"window_id": wid, "payload": payload}
+
         stream = iter_mqtt_events(Path(session.raw_json_path))
-        for event in stream:
-            for row in manager.add_event(event):
+        try:
+            for event in stream:
+                sorter.add(sortable(event))
+            ndjson_stats = {
+                k: v
+                for k, v in vars(stream.stats).items()
+                if k != "malformed_samples"
+            }
+
+            for item in sorter.iter_sorted():
+                p = item["payload"]
+                obj = {
+                    "general": {
+                        "device_name": p["internal_device_name"],
+                        "application": p["application"],
+                        "ip": p["ip"],
+                        "mac": p["mac"],
+                        "full_id": p["full_id"],
+                    },
+                    "@timestamp": iso_utc_from_ns(p["ts_ns"]),
+                    "mqtt": {
+                        "retained": p["retained"],
+                        "qos": p["qos"],
+                        "message_value": p["message_value"],
+                        "topic": p["topic"],
+                        "message_id": p["message_id"],
+                        "message_type": p["message_type"],
+                        "duplicate": p["duplicate"],
+                    },
+                }
+                event = parse_telemetry_line(_json.dumps(obj))
+                for row in manager.add_event(event):
+                    presence.mark(row["device_id"], row["window_id"])
+                    yield row
+
+            sorter.cleanup()
+
+            # Finalization runs only after fully successful sorted
+            # consumption; a failed extraction never fabricates partial
+            # manager output.
+            for row in manager.finish():
                 presence.mark(row["device_id"], row["window_id"])
                 yield row
-        ndjson_stats = {
-            k: v
-            for k, v in vars(stream.stats).items()
-            if k != "malformed_samples"
-        }
-        for row in manager.finish():
-            presence.mark(row["device_id"], row["window_id"])
-            yield row
+        finally:
+            sorter.cleanup()
 
         observed_any = manager.tracker.max_wid_seen is not None
         if observed_any:
@@ -374,6 +448,15 @@ def iter_behavior_rows(
             collect["presence_devices"] = presence.devices()
             collect["max_window_id"] = manager.tracker.max_wid_seen
             collect["min_window_id"] = manager.tracker.min_wid_seen
+            collect["behavior_sorter_diagnostics"] = {
+                "rows": sorter.rows_seen,
+                "inversions": sorter.inversions,
+                "max_inversion_windows": sorter.max_inversion_windows,
+                "chunks_written": sorter.total_chunks_written,
+                "merge_passes": sorter.merge_passes,
+                "max_open_readers": sorter.max_open_readers,
+                "merge_fan_in": sorter.merge_fan_in,
+            }
             collect["valid_event_accounting"] = {
                 "parsed_events": ndjson_stats.get("events_parsed", 0),
                 "malformed_lines": ndjson_stats.get("malformed_lines", 0),

@@ -393,6 +393,25 @@ class FeatureStoreReader:
             raise ValueError(f"unknown modality {modality!r}")
         yield from dispatch[modality](scenario_id, validate=validate)
 
+    def iter_network_window_ids(self, scenario_id: str) -> Iterator[int]:
+        """Bounded scan of ONLY the window_id column (fast range discovery).
+
+        Parquet path reads a single column; JSONL fallback streams lines."""
+        final_dir = self.store_root / "network" / scenario_id
+        if not final_dir.is_dir():
+            raise FileNotFoundError(f"no stored network output for {scenario_id}")
+        for part in sorted(final_dir.glob("part-*")):
+            if part.suffix == ".parquet":
+                table = pq.read_table(part, columns=["window_id"])
+                for wid in table.column("window_id").to_pylist():
+                    yield int(wid)
+            else:
+                with open(part, "r", encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if line:
+                            yield int(json.loads(line)["window_id"])
+
     def count_records(self, scenario_id: str, modality: str) -> int:
         return sum(1 for _ in self._iter_parts(scenario_id, modality))
 

@@ -1,13 +1,19 @@
 # DataSense Raw Ingestion & Feature-Engineering Methodology
 
 - **Branch:** `feat/datasense-integration`
-- **Scope:** RAW INGESTION + FEATURE FOUNDATION ONLY. No Network Detector,
-  Behavioural Profiler, Finding Gateway, ABM, graph or SREP components are
-  implemented here. This document describes the input foundation those
-  components will consume in the next stage.
+- **Scope:** Part I — RAW INGESTION + FEATURE FOUNDATION. Part II — the
+  downstream research pipeline (models → Findings → Gateway → ABM/graphs →
+SREP) consuming only those raw-derived records. The five-agent coordination
+workflow, Blackboard, orchestration layer and frontend are not implemented.
+The Finding Gateway exists in the agents package but is not the deferred
+multi-agent coordination system.
 - **Companion docs:** `docs/datasense_audit.md` (processed release),
   `docs/datasense_raw_audit.md` (raw release). Both remain authoritative for
   their audit findings; nothing here replaces them.
+- **Revision:** includes the bounded-memory correction pass (bounded-fan-in
+  external merge for record ordering, aggregated pair-bounded communication
+  graph, runtime observation-mask enforcement, benign chronological splits,
+  genuine benign_whole-network3 extraction and smoke training).
 
 ---
 
@@ -381,8 +387,17 @@ Output produced by `datasense_raw_extractor_v1` is refused as incompatible
 
 ## 12. Validation performed (bounded)
 
-Only two small sessions were extracted with the v2 semantics (no large
-captures):
+Three sessions are extracted in total — two bounded attack fixtures plus the
+genuine 12-hour benign capture. The complete 250 GB corpus and the
+DDoS/DoS captures remain unextracted.
+
+Verified stored row counts:
+
+| Session | network rows | behaviour rows | communication rows |
+|---|---|---|---|
+| `attack_recon_host-disc-udp-ping_soil-sensor` | 572 | 182 | 1,076 |
+| `attack_recon_ping-sweep_whole-network` | **573** | 182 | 1,788 |
+| `benign_whole-network3` (12 h, low profile) | 380,160 | 120,960 | — |
 
 * `attack_recon_host-disc-udp-ping_soil-sensor` (audited fixture):
   4,787 packets parsed (matches audit); first packet Δ vs attacks.csv start
@@ -390,18 +405,32 @@ captures):
   `attack_samples_5sec.csv` **exactly on all 12 windows**
   `[506,151,70,74,69,76,77,77,68,45,65,75]`; soil `log_messages_count` = 5 ×12
   (+2 partial tail = 62 total, matching the audit). Telemetry accounting:
-  1,246 parsed == 1,246 contributing, 0 malformed, 0 duplicates; 805 events
-  arrived behind the provisional watermark within tolerance and all landed in
-  their correct windows. Communication: 1,076 directed edges (825
-  resolved↔resolved, 200 →broadcast, 39 →external, 12 →multicast).
-  Peak RSS ≈ **53 MB**.
-* `attack_recon_ping-sweep_whole-network`: completed, 572×182 rows.
+  1,246 parsed == 1,246 contributing, 0 malformed, 0 duplicates.
+  Communication: 1,076 directed edges (825 resolved↔resolved,
+  200 →broadcast, 39 →external, 12 →multicast). Peak RSS ≈ **53 MB**.
+
+Historical note on the "805 late events": that figure was measured by the
+earlier streaming implementation, whose watermark ran directly over the raw
+file's arrival order. Three distinct mechanisms must not be conflated:
+
+* raw NDJSON presort (Prompt 1 behaviour path): reorders the recorded
+  interleaved telemetry by window before accumulation;
+* watermark: a defensive post-presort invariant with hard-fail semantics;
+* ReplayRunner sorter: orders feature-record streams before downstream
+  replay.
+
+For the audited fixture, ReplayRunner observed **arrival-order inversions
+before sorting** of network 20 and behaviour 5; these are operational
+input-order diagnostics, not inversions remaining after sorting. The
+post-sort stream is rechecked as monotonic before chronological replay, so
+no stream containing post-sort inversions is ever accepted.
 
 Direct-raw vs stored records verified IDENTICAL for network, behaviour AND
-communication on the fixture. Resource profiles low/standard/auto produce
-identical normalized scientific records (tested).
+communication on both attack fixtures under the optimized implementation
+(presort + bounded-fan-in merge treated as operational optimizations; no
+scientific schema bump required).
 
-Vendor parity is unchanged by the corrective pass: the fixture contains no
+Vendor parity is unchanged by the corrective passes: the fixture contains no
 pre-start events, so the tolerance policy never engages, and the lateness
 horizon (K=12 windows) covers the whole session.
 
@@ -435,12 +464,25 @@ python scripts/datasense_extract.py extract --profile auto
 # then benign_whole-network3 (largest single job), ddos/dos last.
 ```
 
-Expensive commands intentionally NOT run: any extraction of ddos/dos/benign
-captures, multi-hour jobs, model training.
+Expensive commands intentionally NOT run (current reality): the complete
+250 GB extraction; full DDoS/DoS extraction; research-scale hyperparameter
+search; research-grade model training; a complete research replay across all
+extracted sessions; and any Stage 3 application/orchestration work. The
+genuine benign capture HAS been extracted and used for smoke training, so it
+no longer appears in this list.
 
 ## 14. Tests
 
-104 tests pass (`python -m pytest tests -q`). Coverage: discovery/catalog
+The full suite (Prompt 1 + Prompt 2 + closure-pass tests) currently
+stands at **172 tests, all passing, zero skips and zero warnings**
+(`python -m pytest tests -q -ra`). Coverage beyond the earlier list: bounded-fan-in external
+merge (open-reader bound, multi-pass, failure/abandonment cleanup), benign-
+only behavioural-training enforcement (unit + CLI), runtime observation-mask
+enforcement and invariance, end-to-end benign chronological blocks, integer
+evaluation metrics with known values, sparse absence on dense rows,
+extraction-wrapper sorter cleanup on every exit path, strict direct/store
+scientific-projection equivalence with a negative mutation test, and a
+bounded-replay stress run. Earlier coverage remains: discovery/catalog
 joins, structured metadata mapping, device resolution, classic pcap
 (µs/ns/endian), pcapng (tsresol 2^-9/10^-6, SPB, truncation), frame decoding
 (Ethernet II/802.3-SNAP/VLAN/ARP/IPv4/IPv6/TCP+MSS/GSO), NDJSON line-by-line
@@ -465,10 +507,12 @@ the dataset is absent.
    (per task, non-blocking).
 2. Protocol vocabulary is L3/L4 only; vendor payload-level decodes
    (`data`, `json`) are out of scope for v1.
-3. Telemetry files are not strictly monotonic per device (805 out-of-order
-   events in the fixture); the watermark policy makes loss impossible and
-   features arrival-order invariant, but `max_observed_lateness_ns` reflects
-   raw skew (61.8 s here) while acceptance is window-quantized.
+3. Telemetry ordering: the recorded benign capture physically interleaves
+   two time-streams (no monotonic layout exists per file, device or topic);
+   the behaviour path presorts events through the bounded external sorter,
+   after which the watermark invariant holds with zero post-sort lateness
+   for the benign run. Historical per-run "late event" counts from the
+   pre-presort implementation no longer apply.
 4. Per-edge port lists are capped at 32 with explicit truncation flags;
    packet/byte/protocol aggregates remain exact.
 5. Behavioural coverage remains sensor-only by dataset design; non-sensor
@@ -519,3 +563,259 @@ Profile equivalence guarantee: normalized scientific-record equivalence
 (record membership, order after normalization, values, masks, edges), NOT
 byte-identical Parquet files — buffering and row-group sizes legitimately
 differ between profiles.
+
+---
+
+# PART II — Downstream research pipeline (Prompt 2)
+
+## 17. Provenance chain
+
+```text
+RAW DATASENSE (read-only)
+      ↓
+our parser/extractor        datasets/datasense/*
+      ↓
+our feature schema/store    network|behavior|communication partitions
+      ↓
+our models                  pipeline/network_detector.py (RF baseline),
+                            pipeline/behavior_profiler.py (per-sensor profiles)
+      ↓
+Findings                    pipeline/findings.py (label-firewalled value objects)
+      ↓
+Gateway                     agents/finding_gateway.py (single state boundary)
+      ↓
+ABM / graphs                simulation/{topology,communication_graph,abm}.py
+      ↓
+SREP                        srep/device_srep.py -> risk/decision state
+```
+
+> The system is a live/event-driven architecture evaluated through
+> chronological replay of recorded raw IoT network and telemetry traffic.
+> It is not connected to a currently live physical IoT deployment.
+
+Classification:
+
+* **Dataset-grounded** — raw observations, device identities, timestamps,
+  attack metadata, documented topology evidence.
+* **Project-derived** — windows, features, model predictions, findings,
+  communication graph.
+* **Simulation-defined** — propagation weight, hop decay, hop cap, node
+  criticality, provisional SREP coefficients (`DATASENSE_SREP_PARAMS`).
+* **Evaluation-only** — labels/categories/targets, vendor processed
+  features. These never enter runtime findings or ABM state.
+
+## 18. Network Detector
+
+Binary benign-vs-attack Random Forest over exactly `NETWORK_MODEL_FEATURES`
+(assertion-guarded matrix; leakage tests). Ground truth policy
+`target_aware_v2` (PRIMARY): TARGET and WHOLE_NETWORK_TARGET windows are the
+only positives, always requiring `network_observed=True`; only genuine
+BENIGN-capture windows are negatives; **NON_TARGET_CONTEXT windows from
+attack captures are EXCLUDED** — retaining them as negatives exists solely
+behind the explicit `--ablation-context-negative` flag. Unobserved rows and
+evaluation actors are always excluded. Splits are session-level for attacks
+(stratified by category) and genuinely assigned chronological blocks
+(first 60% train / next 20% validation / final 20% test) for benign
+captures, computed end-to-end by the dataset builder with ranges and counts
+recorded in the split manifest; no window crosses blocks. Preprocessing
+(median-impute + standard-scale) fits on train only. Evaluation uses a
+single integer label representation with separate validation/test metrics;
+empty splits yield NO accuracy rather than a misleading number. Artifacts
+embed schema/extractor versions + manifest reference and are rejected on
+mismatch at load time.
+
+## 19. Behavioural Profiler
+
+Per-sensor deviation-from-own-benign-baseline (not an attack classifier):
+
+* continuous/degenerate → IsolationForest on domain-shift-resistant
+  properties (cadence, burstiness, topic/type mix, transition rates);
+  absolute value levels excluded from the main model (ablation flag only);
+  degenerate sensors add constant-stream guard rules.
+* sparse/event → frequency/burst/flap rules plus **stateful absence
+  evidence**: when a supported sparse sensor's dense row is unobserved but
+  the surrounding window's telemetry context is demonstrably active (some
+  other supported sensor observed), the profiler tracks windows-since-last-
+  event per sensor and emits an `unexpected_absence` finding once the
+  calibrated gap tolerance (`absence_tau_windows`, p90 of training gaps)
+  is exceeded. Complete modality absence never produces behavioural risk.
+* unsupported devices get NO profile; missing modality is never risk-zero.
+
+Thresholds come from a later chronological calibration block (60/20/20
+train/calibration/held-out). The profiler detects deviation only; it does
+not establish attack causality.
+
+## 20. Findings, Gateway, ABM, graphs, SREP
+
+* **NetworkFinding / BehaviorFinding** — frozen validated value objects;
+  provenance keys whitelisted and now carry an OPAQUE `session_trace` digest
+  instead of the scenario id (session names can encode attack information);
+  runtime risk calculations inspect neither identifier. Labels cannot be
+  represented (tests enforce).
+* **FindingGateway** — validates schema+timestamp, resolves entities,
+  preserves provenance verbatim, routes network vs behaviour evidence to
+  separate ABM channels, rejects unknown entities cleanly, exposes
+  subscribe() for a future Blackboard without model-interface changes.
+  The five-agent coordination workflow is not implemented. The Finding
+  Gateway currently resides in the agents package but is not the deferred
+  multi-agent orchestration layer.
+* **G_topology** — metadata-grounded structural graph; every edge labelled
+  DOCUMENTED or STRONGLY_INFERRED per audit §11; FROZEN via ``nx.freeze``
+  before returning, so runtime components structurally cannot mutate it.
+* **G_communication** — aggregate, pair-bounded graph rebuilt during replay
+  from Prompt-1 communication records: one edge per observed directed pair
+  holding running packet/byte totals, first/last window + timestamps,
+  protocols-ever (capped) and broadcast/multicast flags. Per-window edge
+  detail is streamed to disk when a spill path is configured; memory does
+  not grow with window count. Observed traffic ≠ risk propagation.
+* **ReplayRunner** — genuinely bounded: each modality stream passes once
+  through a bounded-chunk external sorter (spill + k-way merge; arrival
+  inversions counted) and windows are merged in ascending order, retaining
+  only the current window's rows plus bounded lookahead/history. Direct-raw
+  fused streams route through the same sorters. Out-of-order input is
+  handled explicitly and defensively re-checked after sorting.
+* **DeviceABM** — separate `network_risk` / `behavior_risk` /
+  `propagated_risk` / `systemic_risk`; attacker nodes carry state but are
+  excluded from defended blast radius; bounded history deque (+ optional
+  JSONL spill); deterministic max-based propagation, cycle-safe, direct
+  evidence never overwritten; fusion = max(direct, propagated), missing
+  behaviour ignored — never averaged as zero.
+* **SREP** — integrated path over the Device Risk Graph with criticality-
+  weighted defended blast radius and top risky nodes; parameters reported as
+  SIMULATION-DEFINED. Mode is **DEVICE_ONLY**; supplying an agent-trust
+  graph raises `TrustGraphUnsupportedError` rather than silently claiming
+  DUAL_GRAPH semantics without genuine trust fusion.
+
+## 21. Execution modes
+
+```bash
+# smoke training (bounded; artifacts marked SMOKE TEST / NOT RESEARCH RESULT)
+python scripts/datasense_pipeline.py train-network --session <ids>
+python scripts/datasense_pipeline.py train-behavior --session <benign_id>
+
+# feature-store replay
+python scripts/datasense_pipeline.py replay-store --session <id> \
+    --network-model ... --behavior-model ... [--replay-speed 5x]
+
+# direct raw demonstration (same downstream path, no store)
+python scripts/datasense_pipeline.py demo-direct-raw --session <id> \
+    --network-model ... --behavior-model ... [--profile low]
+```
+
+Full-training commands (NOT executed here):
+
+```bash
+python scripts/datasense_extract.py extract --profile auto          # full extraction first
+python scripts/datasense_pipeline.py train-network --include-benign # all sessions, benign blocks
+python scripts/datasense_pipeline.py train-behavior --session benign_whole-network3
+python scripts/datasense_pipeline.py replay-store --session <id> ...
+```
+
+Resource profiles affect extraction concurrency/memory only; replay speed
+affects wall-clock pacing only; neither changes findings, final state or
+SREP output (tested).
+
+Measured (closure pass): the audited fixture session contains 572 dense
+network rows but only **475 observed** rows; runtime emits exactly 475
+network findings in BOTH modes. Direct-raw and feature-store replays are
+scientifically identical (findings, aggregated communication graph
+166 pair-edges / 53 nodes, full ABM state, DEVICE_ONLY SREP) under a defined
+scientific projection that never strips risk or replay-state fields;
+ordering diagnostics are compared separately as operational data.
+
+Resource measurements, kept separate by scope:
+
+* bounded audited attack-fixture replay + SREP: ≈ **182.0 MB**
+  (`scripts/measure_replay_rss.py`, loads saved smoke artifacts);
+* genuine benign extraction (12 h): ≈ **190.6 MB**;
+* research-scale training peak RSS: not measured;
+* complete-corpus replay peak RSS: not measured.
+
+Genuine benign baseline: `benign_whole-network3` was extracted with the low
+profile — 380,160 network rows (44 devices x 8,640 windows) and 120,960
+behaviour rows (14 sensors x 8,640 windows) at peak RSS ≈ **191 MB**,
+confirming session-length-independent memory. The benign telemetry file was
+found to PHYSICALLY INTERLEAVE two time-streams (~813k out-of-order lines,
+backward jumps up to ~12 h across every grouping tried: file order, per-
+device, per-topic). Because no monotonic layout exists in the recorded file,
+the behaviour path presorts events through the bounded external sorter keyed
+by window_id BEFORE the watermark manager; the presort is what reorders the
+raw file, and the watermark remains a defensive invariant afterwards (its
+hard-fail guarantee is meaningful only because sorting already happened).
+Operational sorting parameters (chunk rows, fan-in) never change scientific
+output. The Behavioural Profiler is trained ONLY from this genuine benign
+capture (5,184 train / 1,728 calibration / 1,728 held-out windows per
+sensor; held-out benign false-positive rates 0.005-0.012 for continuous
+sensors).
+
+Smoke Network Detector split composition (exact, from the saved manifest):
+
+| Split | Rows | Positives | Negatives |
+|---|---|---|---|
+| train | 176,635 | 13 (udp-ping TARGET soil-sensor observed windows) | 176,622 benign-train negatives |
+| validation | 59,081 | 468 (ping-sweep WHOLE_NETWORK_TARGET protected-asset windows) | 58,613 benign-validation negatives |
+| test | 58,813 | **0** | 58,813 benign held-out negatives |
+
+Metrics semantics (smoke artifacts stay labelled SMOKE TEST / NOT RESEARCH
+RESULT; none of this is research performance):
+
+* validation recall = **0.0** — defined, because positive support exists
+  (468) and none were detected by the smoke model;
+* test recall is UNDEFINED (null) — zero positive support;
+* test accuracy = 1.0 measures held-out BENIGN specificity only and must not
+  be read as attack-detection performance;
+* validation and test are reported separately and are never merged into a
+  single headline score.
+
+The two attack sessions were chosen deliberately small for the bounded
+closure pass; full-category attack extraction remains future work.
+
+### Warning treatment reproducibility note
+
+Dependency versions used for the closure verification: Python 3.14.2,
+scikit-learn 1.9.0, joblib 1.5.3, NumPy 2.5.2 (these are the versions
+present in the working environment; `requirements.txt` is unpinned and does
+NOT pin them).
+
+Two warning sources existed in earlier runs:
+
+1. `sklearn/utils/parallel.py:144` UserWarning ("delayed should be used with
+   Parallel"), emitted on every Random-Forest parallel inference call when
+   ``n_jobs != 1``. Corrected structurally: inference uses a deep-copied,
+   single-threaded pipeline view (`n_jobs=1`); vote aggregation is identical
+   for any n_jobs, so probabilities are bit-identical while the per-call
+   warning path disappears entirely. Replay additionally infers once per
+   window batch through `findings_from_records`.
+2. `joblib/numpy_pickle.py:207` DeprecationWarning — joblib 1.5.3 assigns to
+   ``array.shape`` while unpickling, which NumPy 2.5 deprecates. This is an
+   upstream cosmetic incompatibility inside third-party loader code, not a
+   defect in our persistence logic. It is narrowly filtered at the single
+   controlled load entry point (`pipeline/artifact_io.load_joblib`, exact
+   message prefix + originating module), used by both model loaders and the
+   schema-mismatch test.
+
+No broad scikit-learn / NumPy / Joblib warning suppression is applied.
+Artifact-format, feature-schema and extractor-version mismatch errors always
+propagate. The filter must be removed when a Joblib release compatible with
+NumPy >= 2.5's array-shape policy is adopted.
+
+## 22. Stage 2 limitations
+
+1. Attack-side training coverage is two recon sessions; full-category
+   extraction and research training remain future work (commands in §21).
+2. Split composition is asymmetric by construction of the smoke stage:
+   validation contains 468 attack-positive rows and its recall is therefore
+   defined — currently **0.0** for the smoke model; test is benign-only
+   (zero positive support), so test recall is undefined and test accuracy
+   1.0 measures held-out BENIGN specificity only. Research-grade attack
+   generalization on held-out attack sessions remains unmeasured because
+   only two recon attack sessions were extracted. The chronological benign
+   test block still provides an honest benign false-positive rate.
+3. Sparse-absence tolerance is calibrated from p90 inter-event gaps; the
+   smoke session's sparse sensors stayed active enough that no absence
+   findings fired there — absence behaviour is covered by unit tests on
+   real dense-row shapes instead.
+4. Replay buffers whole windows (bounded lookahead) but not whole sessions;
+   window-level pacing granularity is one window.
+5. Agent Trust Graph remains unimplemented; SREP refuses DUAL_GRAPH claims
+   via `TrustGraphUnsupportedError`.
