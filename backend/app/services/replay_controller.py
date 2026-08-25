@@ -181,6 +181,7 @@ class ReplayController:
 
     # ------------------------------------------------------------ lifecycle
     def create_replay(self, *, session_id: str, source_mode: str, pacing: PacingSpeed) -> str:
+        terminal_to_join: threading.Thread | None = None
         with self._lock:
             if self._active_id is not None:
                 active = self._runs.get(self._active_id)
@@ -194,6 +195,15 @@ class ReplayController:
                         f"replay {self._active_id} is already active",
                         409,
                     )
+                if active is not None and active.state in (
+                    ReplayState.COMPLETED,
+                    ReplayState.FAILED,
+                ):
+                    # Terminal replay must not permanently block creation.
+                    # Evict it cleanly (pop + clear active) and join outside lock.
+                    terminal_to_join = active.thread
+                    self._runs.pop(self._active_id, None)
+                    self._active_id = None
             caps = self.catalog.capabilities(session_id)
             if caps is None:
                 raise ControllerError("unknown_session", f"unknown session {session_id!r}", 404)
@@ -204,6 +214,9 @@ class ReplayController:
                     f"(available: {caps['supported_source_modes']})",
                     409,
                 )
+
+        if terminal_to_join is not None:
+            terminal_to_join.join(timeout=5)
 
         replay_id = uuid.uuid4().hex[:12]
         trace = opaque_session_trace(session_id)
@@ -346,6 +359,12 @@ class ReplayController:
                     "invalid_transition", "replay already running", 409
                 )
             if run.state == ReplayState.CREATED:
+                # Guard against double-start while worker is already building
+                # (e.g., restart auto-play followed by manual play during LOADING).
+                if run.thread is not None and run.thread.is_alive():
+                    raise ControllerError(
+                        "invalid_transition", "replay already running", 409
+                    )
                 # Start the scientific worker now (unpaused); the worker
                 # itself transitions CREATED→RUNNING after runtime build.
                 self._start_worker(run)
@@ -385,10 +404,19 @@ class ReplayController:
             run.runtime.control.pause_event.set()
         self._publish(run, ReplayEventType.REPLAY_STEPPED, requested_windows=target)
 
-    def restart(self, replay_id: str) -> str:
+    def restart(
+        self,
+        replay_id: str,
+        *,
+        session_id: str | None = None,
+        source_mode: str | None = None,
+        pacing: PacingSpeed | str | None = None,
+    ) -> str:
         """Stop/close old runtime, discard mutable state, start a fresh run
         under a NEW replay id (sequence namespaces never mix). The fresh run
-        is started immediately."""
+        is started immediately. Optional overrides (session_id/source_mode
+        /pacing) replace the previous replay's values; omitted fields are
+        retained for backward compatibility."""
         with self._lock:
             run = self._require(replay_id)
             if run.runtime is not None:
@@ -398,10 +426,15 @@ class ReplayController:
                 self._active_id = None
         if run.thread is not None:
             run.thread.join(timeout=10)
+        target_session = session_id if session_id is not None else run.scenario_id
+        target_source = source_mode if source_mode is not None else run.source_mode
+        target_pacing: PacingSpeed | str = pacing if pacing is not None else run.pacing
+        if isinstance(target_pacing, str):
+            target_pacing = PacingSpeed(target_pacing)
         new_id = self.create_replay(
-            session_id=run.scenario_id,
-            source_mode=run.source_mode,
-            pacing=run.pacing,
+            session_id=target_session,
+            source_mode=target_source,
+            pacing=target_pacing,
         )
         self.play(new_id)
         return new_id

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from backend.app.contracts.replay_v1 import PacingSpeed
+from backend.app.contracts.replay_v1 import PacingSpeed, ReplayRestartRequestV1
 
 router = APIRouter()
 
@@ -51,8 +51,30 @@ def step(replay_id: str, request: Request):
 
 
 @router.post("/replays/{replay_id}/restart", status_code=201)
-def restart(replay_id: str, request: Request):
-    new_id = request.app.state.controller.restart(replay_id)
+async def restart(replay_id: str, request: Request):
+    try:
+        raw = await request.json()
+        body = raw if isinstance(raw, dict) else {}
+    except Exception:
+        body = {}
+    # Validate optional fields via contract (tolerates missing)
+    try:
+        parsed = ReplayRestartRequestV1.model_validate(body)
+        session_id = parsed.session_id
+        source_mode = parsed.source_mode
+        pacing = parsed.pacing
+    except Exception:
+        # Fallback: raw extraction if validation fails for partial body
+        session_id = body.get("session_id")
+        source_mode = body.get("source_mode")
+        pacing_raw = body.get("pacing")
+        pacing = PacingSpeed(pacing_raw) if pacing_raw else None
+    new_id = request.app.state.controller.restart(
+        replay_id,
+        session_id=session_id,
+        source_mode=source_mode,
+        pacing=pacing,
+    )
     return {"previous_replay_id": replay_id, "new_replay_id": new_id}
 
 

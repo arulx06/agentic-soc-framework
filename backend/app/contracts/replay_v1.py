@@ -32,6 +32,12 @@ class ReplayCreateRequestV1(BaseModel):
     window_seconds: float = Field(default=5.0, gt=0)
 
 
+class ReplayRestartRequestV1(BaseModel):
+    session_id: str | None = None
+    source_mode: str | None = Field(default=None, pattern="^(feature_store|direct_raw)$")
+    pacing: PacingSpeed | None = None
+
+
 class ReplayStatusV1(BaseModel):
     schema_version: str = Field(default=CONTRACT_VERSIONS["replay_status"])
     replay_id: str
