@@ -15,12 +15,24 @@ def health(request: Request) -> dict:
 
     controller = request.app.state.controller
     with controller._lock:
+        active_run = (
+            controller._runs.get(controller._active_id)
+            if controller._active_id
+            else None
+        )
         active = (
             controller._active_id
-            if controller._active_id
-            and controller._runs.get(controller._active_id)
-            and controller._runs[controller._active_id].state.value == "RUNNING"
+            if active_run
+            and active_run.state.value
+            in ("CREATED", "RUNNING", "PAUSED")
             else None
+        )
+        active_starting = bool(
+            active
+            and active_run
+            and active_run.state.value == "CREATED"
+            and active_run.thread is not None
+            and active_run.thread.is_alive()
         )
     readiness = artifacts_ready()
     scientific_ready = all(readiness.values())
@@ -29,6 +41,7 @@ def health(request: Request) -> dict:
         "api_version": API_VERSION,
         "contract_versions": CONTRACT_VERSIONS,
         "active_replay": active,
+        "active_replay_starting": active_starting,
         "artifact_readiness": readiness,
         "scientific_ready": scientific_ready,
     }

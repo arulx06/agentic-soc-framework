@@ -9,7 +9,8 @@ export const GRAPH_COLORS = {
   neighbour: "#67e8f9",
   documented: "rgba(125, 211, 252, 0.55)",
   inferred: "rgba(148, 163, 184, 0.22)",
-  communication: "rgba(94, 234, 212, 0.16)",
+  communication: "rgba(94, 234, 212, 0.45)",
+  communicationParticle: "rgba(45, 212, 191, 0.95)",
   dimmed: "rgba(71, 85, 105, 0.07)",
   text: "#dbeafe",
 } as const;

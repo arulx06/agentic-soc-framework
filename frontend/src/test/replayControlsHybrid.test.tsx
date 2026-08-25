@@ -220,4 +220,42 @@ describe("ReplayControls hybrid lifecycle fixes", () => {
     const call = (onRestart.mock.calls[0] as unknown as [string, { pacing: string }] | undefined)?.[1];
     expect(call?.pacing).toBe("max");
   });
+
+  it("Play stays disabled while isStarting (Restart CREATED but already starting)", () => {
+    mockUseReplayContext.mockReturnValue({
+      state: {
+        ...createInitialReplayState(),
+        replayId: "r2",
+        status: makeStatus({ state: "CREATED" }),
+        isStarting: true,
+      },
+    });
+    render(<ReplayControls {...baseProps} />);
+    expect(screen.getByText("Play")).toBeDisabled();
+    expect(screen.getByText("Create")).toBeDisabled();
+  });
+
+  it("Play enabled when CREATED and not starting, disabled when starting", () => {
+    mockUseReplayContext.mockReturnValue({
+      state: {
+        ...createInitialReplayState(),
+        replayId: "r1",
+        status: makeStatus({ state: "CREATED" }),
+        isStarting: false,
+      },
+    });
+    const { unmount } = render(<ReplayControls {...baseProps} />);
+    expect(screen.getByText("Play")).not.toBeDisabled();
+    unmount();
+    mockUseReplayContext.mockReturnValue({
+      state: {
+        ...createInitialReplayState(),
+        replayId: "r1",
+        status: makeStatus({ state: "CREATED" }),
+        isStarting: true,
+      },
+    });
+    render(<ReplayControls {...baseProps} />);
+    expect(screen.getByText("Play")).toBeDisabled();
+  });
 });

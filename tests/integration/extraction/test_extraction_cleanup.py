@@ -13,7 +13,7 @@ from conftest import DEFAULT_DEVICES_ROWS, mqtt_record
 from datasets.datasense import extraction as extraction_mod
 from datasets.datasense.devices import DeviceInventory, DeviceRecord
 from datasets.datasense.windowing import iso_utc_from_ns
-from tests_extraction_helpers import build_synthetic_session
+from tests.support.extraction import build_synthetic_session
 
 BASE_NS = 1_736_976_313 * 10**9 + 307_000_000
 

@@ -1,7 +1,6 @@
 """Event chronology over a real bounded replay (§21.3)."""
 
 from backend.app.contracts.events_v1 import ReplayEventType
-from api_fixtures import run_to_completion
 
 
 def test_chronology_and_terminal_event(completed_feature_store_run):

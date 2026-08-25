@@ -40,6 +40,7 @@ interface Props {
   layoutSignal: number;
   onNodeSelect: (nodeId: string) => void;
   onLinkSelect: (linkId: string) => void;
+  isRunning?: boolean;
 }
 
 interface NodeVisual {
@@ -69,6 +70,7 @@ export function ForceGraph3DView({
   layoutSignal,
   onNodeSelect,
   onLinkSelect,
+  isRunning = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<GraphInstance | null>(null);
@@ -84,6 +86,7 @@ export function ForceGraph3DView({
     neighbourIds,
     incidentLinkIds,
     labelMode,
+    isRunning,
   });
   const size = useElementSize(containerRef);
 
@@ -95,6 +98,7 @@ export function ForceGraph3DView({
     neighbourIds,
     incidentLinkIds,
     labelMode,
+    isRunning,
   };
 
   useEffect(() => {
@@ -163,15 +167,59 @@ export function ForceGraph3DView({
       .linkDirectionalParticles((link) => {
         if (!isPresentationLink(link)) return 0;
         const interaction = interactionRef.current;
-        return interaction.kind === "risk" &&
-          link.risk?.evidence_type === "STRONGLY_INFERRED" &&
-          (!interaction.selectedNodeId || interaction.incidentLinkIds.has(link.id))
-          ? 1
-          : 0;
+        // Freeze animation when not RUNNING (PAUSED/COMPLETED etc.)
+        if (!interaction.isRunning) return 0;
+        const incident =
+          !interaction.selectedNodeId || interaction.incidentLinkIds.has(link.id);
+        if (!incident) return 0;
+        if (
+          interaction.kind === "risk" &&
+          link.risk?.evidence_type === "STRONGLY_INFERRED"
+        )
+          return 1;
+        if (
+          interaction.kind === "communication" &&
+          link.communication &&
+          (link.communication.packet_count_delta ?? 0) > 0
+        ) {
+          const delta = link.communication.packet_count_delta ?? 0;
+          return Math.min(
+            4,
+            Math.max(1, Math.floor(Math.log10(delta + 1) * 1.2))
+          );
+        }
+        return 0;
       })
-      .linkDirectionalParticleWidth(0.7)
-      .linkDirectionalParticleSpeed(0.002)
-      .linkDirectionalParticleColor(() => GRAPH_COLORS.inferred)
+      .linkDirectionalParticleWidth((link: unknown) => {
+        if (
+          isPresentationLink(link as LinkObject) &&
+          (link as PresentationLink).kind === "communication"
+        ) {
+          const delta = (link as PresentationLink).communication?.packet_count_delta ?? 0;
+          // Size subtlely reflects current-window byte volume if available
+          const byteDelta = (link as PresentationLink).communication?.captured_byte_delta ?? 0;
+          const base = byteDelta > 0 ? Math.log10(byteDelta + 1) * 0.35 + 0.7 : 0.9;
+          return Math.min(1.6, Math.max(0.9, base));
+        }
+        return 0.7;
+      })
+      .linkDirectionalParticleSpeed((link: unknown) => {
+        if (
+          isPresentationLink(link as LinkObject) &&
+          (link as PresentationLink).kind === "communication"
+        ) {
+          const delta = (link as PresentationLink).communication?.packet_count_delta ?? 0;
+          // Clamped speed encodes intensity, not latency
+          return Math.min(0.012, Math.max(0.006, 0.006 + Math.log10(delta + 1) * 0.0015));
+        }
+        return 0.002;
+      })
+      .linkDirectionalParticleColor((link: unknown) =>
+        isPresentationLink(link as LinkObject) &&
+        (link as PresentationLink).kind === "communication"
+          ? GRAPH_COLORS.communicationParticle
+          : GRAPH_COLORS.inferred
+      )
       .warmupTicks(30)
       .cooldownTicks(140)
       .cooldownTime(6000)
@@ -199,6 +247,10 @@ export function ForceGraph3DView({
   useEffect(() => {
     graphRef.current?.width(size.width).height(size.height);
   }, [size.height, size.width]);
+
+  useEffect(() => {
+    graphRef.current?.refresh();
+  }, [isRunning]);
 
   useEffect(() => {
     const validIds = new Set(data.nodes.map((node) => node.id));
@@ -402,13 +454,14 @@ function linkWidth(
 ) {
   if (selectedNodeId && incidentLinkIds.has(link.id)) return 2.4;
   if (link.communication) {
-    return Math.min(
-      2.2,
-      Math.max(
-        0.25,
-        Math.log10(link.communication.packet_count_total + 1) * 0.48
-      )
-    );
+    const deltaPackets = link.communication.packet_count_delta ?? 0;
+    const deltaBytes = link.communication.captured_byte_delta ?? 0;
+    if (deltaPackets === 0 && deltaBytes === 0) return 0.35;
+    if (deltaBytes > 0) {
+      return Math.min(2.8, Math.max(0.6, Math.log10(deltaBytes + 1) * 0.42));
+    }
+    // Active edge but no captured bytes observed: small fixed width, no byte estimation
+    return 1.0;
   }
   return link.risk?.evidence_type === "DOCUMENTED" ? 1.1 : 0.42;
 }

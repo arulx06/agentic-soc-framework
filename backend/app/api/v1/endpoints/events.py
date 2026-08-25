@@ -18,11 +18,13 @@ async def replay_events(websocket: WebSocket, replay_id: str):
         return
 
     await websocket.accept()
-    subscriber_id, _sub = controller.broker.subscribe()
+    subscriber_id, _sub = controller.broker.subscribe(replay_id)
     try:
         while True:
             events, lagged = controller.broker.drain(subscriber_id)
             for env in events:
+                if env.replay_id != replay_id:
+                    continue
                 payload = env.model_dump(mode="json")
                 await websocket.send_json(payload)
                 if env.event_type.value in ("REPLAY_COMPLETED", "REPLAY_FAILED"):

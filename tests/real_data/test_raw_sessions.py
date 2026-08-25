@@ -6,20 +6,16 @@ with a clear reason otherwise. The known vendor-parity counts from the raw
 audit (docs/datasense_raw_audit.md section 8) serve as regression checks.
 """
 
-from pathlib import Path
-
 import pytest
 
 from datasets.datasense.catalog import build_catalog
 from datasets.datasense.devices import DeviceInventory
 from datasets.datasense.feature_store import FeatureStoreReader
-
-REPO = Path(__file__).resolve().parents[1]
-RAW_ROOT = REPO / "data/raw/datasense/dataset/raw_files"
-ATTACKS_CSV = REPO / "data/raw/datasense/docs/site/attacks.csv"
-DEVICES_CSV = REPO / "data/raw/datasense/docs/site/devices.csv"
-VENDOR_CSV_5S = (
-    REPO / "data/raw/datasense/dataset/processed_files/all_attack_benign_samples/attack_data/attack_samples_5sec.csv"
+from tests.support.paths import (
+    ATTACKS_CSV,
+    DATASENSE_RAW_ROOT as RAW_ROOT,
+    DEVICES_CSV,
+    VENDOR_ATTACK_5S_CSV as VENDOR_CSV_5S,
 )
 
 FIXTURE_SESSION = "attack_recon_host-disc-udp-ping_soil-sensor"

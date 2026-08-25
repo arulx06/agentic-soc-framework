@@ -16,9 +16,14 @@ from simulation.communication_graph import build_comm_graph
 from simulation.replay import ReplayRunner
 from simulation.topology import build_topology
 from srep.device_srep import SREPEngine
+from tests.support.paths import (
+    ATTACKS_CSV,
+    DATASENSE_RAW_ROOT,
+    DATASENSE_STORE_ROOT,
+    DEVICES_CSV,
+)
 
-REPO = __import__("pathlib").Path(__file__).resolve().parents[1]
-STORE = REPO / "data/processed/datasense"
+STORE = DATASENSE_STORE_ROOT
 SESSION = "attack_recon_host-disc-udp-ping_soil-sensor"
 
 pytestmark = pytest.mark.skipif(
@@ -28,7 +33,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def _inventory():
-    return DeviceInventory.load(REPO / "data/raw/datasense/docs/site/devices.csv")
+    return DeviceInventory.load(DEVICES_CSV)
 
 
 def _train_smoke_models(tmp_path):
@@ -123,15 +128,15 @@ def test_direct_raw_matches_feature_store_downstream(smoke_models):
     from datasets.datasense.extraction import iter_pcap_feature_rows, iter_behavior_rows
 
     catalog, diagnostics = build_catalog(
-        REPO / "data/raw/datasense/dataset/raw_files",
-        REPO / "data/raw/datasense/docs/site/attacks.csv",
+        DATASENSE_RAW_ROOT,
+        ATTACKS_CSV,
     )
     session = next(r for r in catalog if r.scenario_id == SESSION)
     inventory = _inventory()
 
     detector, profiler = smoke_models
 
-    inv2 = DeviceInventory.load(REPO / "data/raw/datasense/docs/site/devices.csv")
+    inv2 = DeviceInventory.load(DEVICES_CSV)
     abm2 = DeviceABM(inv2, build_topology(inv2), history_limit=64)
     gw2 = FindingGateway(abm2)
     comm2 = build_comm_graph(inventory=inv2)

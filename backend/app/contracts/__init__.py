@@ -1,8 +1,8 @@
 """Versioned Stage-3A serialization contracts (Pydantic v2).
 
 These contracts serialize backend-produced state only. Ground truth has no
-representation here; see ground_truth.py firewall helpers and
-tests/stage3_api/test_ground_truth_firewall.py.
+representation here; see the firewall helpers and
+tests/integration/backend/api/test_ground_truth_firewall.py.
 """
 
 from backend.app.contracts.common import (  # noqa: F401

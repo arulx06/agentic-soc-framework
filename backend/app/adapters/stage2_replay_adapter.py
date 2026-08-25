@@ -270,6 +270,7 @@ def communication_graph_contract(runtime: ScientificRuntime, replay_id: str):
     nodes = list(g.nodes)
     edges = []
     for u, v, d in g.edges(data=True):
+        delta = runtime.comm_graph.get_window_delta(u, v)
         edges.append(
             CommunicationEdgeV1(
                 src_entity_id=u,
@@ -283,11 +284,16 @@ def communication_graph_contract(runtime: ScientificRuntime, replay_id: str):
                 last_timestamp_utc=d.get("last_timestamp_utc"),
                 broadcast_ever=d.get("broadcast_ever", False),
                 multicast_ever=d.get("multicast_ever", False),
+                packet_count_delta=delta["packet_count_delta"],
+                captured_byte_delta=delta["captured_byte_delta"],
+                protocols_in_window=delta["protocols_in_window"],
             )
         )
     return CommunicationGraphSnapshotV1(
         replay_id=replay_id,
-        window_id=runtime.abm.current_window_id,
+        window_id=runtime.comm_graph.current_window_id
+        if runtime.comm_graph.current_window_id is not None
+        else runtime.abm.current_window_id,
         nodes=nodes,
         edges=edges,
         provenance={"source_component": "backend.app.adapters.stage2_replay_adapter"},

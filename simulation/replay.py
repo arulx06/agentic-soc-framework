@@ -65,6 +65,8 @@ class ReplayControl:
             self.pause_event.clear()
         if not self.pause_event.is_set():
             self.pause_event.wait()
+        if self._cancelled:
+            raise ReplayCancelledError("replay cancelled by controller")
 
 
 class _Peeker:
@@ -213,6 +215,8 @@ class ReplayRunner:
 
         windows_completed = 0
         while True:
+            if control is not None:
+                control.checkpoint(windows_completed)
             live_heads = [h for h in self.heads.values() if h.has_next()]
             if not live_heads:
                 break
@@ -226,6 +230,10 @@ class ReplayRunner:
                     f"{self.last_processed_wid}; ordering violation"
                 )
             emit("WINDOW_STARTED", window_id=target)
+
+            # Prepare bounded per-window delta state even when no rows for this window
+            if self.comm_graph is not None:
+                self.comm_graph.begin_window(target)
 
             net_rows = self._drain(self.heads["network"], target)
             beh_rows = self._drain(self.heads["behavior"], target)

@@ -23,12 +23,15 @@ export interface ReplayState {
   gapDetected: boolean;
   scientificUnavailable: boolean;
   error: string | null;
+  isStarting: boolean;
 }
 
 export type ReplayAction =
   | { type: "REPLAY_SET"; replayId: string; status: ReplayStatusV1 | null }
   | { type: "REPLAY_CLEARED" }
   | { type: "CONNECTION"; state: string }
+  | { type: "START_REQUESTED" }
+  | { type: "START_CANCELLED" }
   | { type: "STATUS"; payload: ReplayStatusV1 }
   | { type: "DEVICE_STATES"; payload: DeviceStateV1[] }
   | { type: "UPSERT_DEVICE_STATE"; payload: DeviceStateV1 }
@@ -56,6 +59,7 @@ export function createInitialReplayState(): ReplayState {
     gapDetected: false,
     scientificUnavailable: false,
     error: null,
+    isStarting: false,
   };
 }
 
@@ -71,13 +75,40 @@ export function replayReducer(state: ReplayState, action: ReplayAction): ReplayS
         replayId: action.replayId,
         connectionState: state.connectionState,
         status: action.status,
+        isStarting: action.status === null,
       };
     case "REPLAY_CLEARED":
       return { ...createInitialReplayState(), connectionState: state.connectionState };
     case "CONNECTION":
       return { ...state, connectionState: action.state };
-    case "STATUS":
-      return { ...state, status: action.payload };
+    case "START_REQUESTED":
+      return { ...state, isStarting: true };
+    case "START_CANCELLED":
+      return { ...state, isStarting: false };
+    case "STATUS": {
+      if (action.payload.replay_id !== state.replayId) return state;
+      if (
+        state.status?.replay_id === action.payload.replay_id &&
+        action.payload.sequence_number < state.status.sequence_number
+      ) {
+        return state;
+      }
+      if (
+        (state.status?.state === "COMPLETED" || state.status?.state === "FAILED") &&
+        action.payload.state !== "COMPLETED" &&
+        action.payload.state !== "FAILED"
+      ) {
+        return state;
+      }
+      const st = action.payload.state;
+      const shouldClearStarting =
+        st === "RUNNING" || st === "PAUSED" || st === "COMPLETED" || st === "FAILED";
+      return {
+        ...state,
+        status: action.payload,
+        isStarting: shouldClearStarting ? false : state.isStarting,
+      };
+    }
     case "DEVICE_STATES":
       return {
         ...state,

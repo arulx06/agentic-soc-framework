@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
+from starlette.concurrency import run_in_threadpool
 
 from backend.app.contracts.replay_v1 import PacingSpeed, ReplayRestartRequestV1
 
@@ -69,7 +70,8 @@ async def restart(replay_id: str, request: Request):
         source_mode = body.get("source_mode")
         pacing_raw = body.get("pacing")
         pacing = PacingSpeed(pacing_raw) if pacing_raw else None
-    new_id = request.app.state.controller.restart(
+    new_id = await run_in_threadpool(
+        request.app.state.controller.restart,
         replay_id,
         session_id=session_id,
         source_mode=source_mode,

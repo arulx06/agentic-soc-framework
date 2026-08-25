@@ -2,7 +2,6 @@
 
 import importlib.util
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -10,8 +9,9 @@ from conftest import DEFAULT_DEVICES_ROWS
 from datasets.datasense.catalog import build_session_record
 from datasets.datasense.devices import DeviceInventory, DeviceRecord
 from pipeline.splits import require_benign_sessions
+from tests.support.paths import REPO_ROOT
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = REPO_ROOT
 BENIGN_ID = "benign_whole-network3"
 ATTACK_ID = "attack_recon_host-disc-udp-ping_soil-sensor"
 

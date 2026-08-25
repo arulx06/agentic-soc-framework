@@ -66,7 +66,8 @@ export function GraphCanvas({
             typeof link.source === "string" ? link.source : link.source.id,
           target:
             typeof link.target === "string" ? link.target : link.target.id,
-          packets: link.communication?.packet_count_total ?? 0,
+          packets: link.communication?.packet_count_delta ?? 0,
+          bytes: link.communication?.captured_byte_delta ?? 0,
           evidence: link.risk?.evidence_type ?? "",
         },
       })),
@@ -105,7 +106,8 @@ export function GraphCanvas({
         if (!element.length) return;
         element.data({
           ...element.data(),
-          packets: link.communication?.packet_count_total ?? 0,
+          packets: link.communication?.packet_count_delta ?? 0,
+          bytes: link.communication?.captured_byte_delta ?? 0,
         });
       });
     });
@@ -187,13 +189,22 @@ function graphStyles(kind: GraphKind): StylesheetJson {
       style: {
         width:
           kind === "communication"
-            ? "mapData(packets, 0, 1000, 0.3, 3)"
+            ? "mapData(packets, 0, 1000, 0.8, 4)"
             : 1,
         "line-color": kind === "risk" ? "#64748b" : "#4b7f7a",
-        "target-arrow-shape": kind === "risk" ? "triangle" : "none",
-        "target-arrow-color": "#64748b",
+        "target-arrow-shape": "triangle",
+        "target-arrow-color": kind === "risk" ? "#64748b" : "#4b7f7a",
         "curve-style": "bezier",
-        opacity: kind === "communication" ? 0.22 : 0.5,
+        opacity: kind === "communication" ? 0.28 : 0.5,
+      },
+    },
+    {
+      selector: 'edge[packets > 0]',
+      style: {
+        "line-color": "#2dd4bf",
+        "target-arrow-color": "#2dd4bf",
+        opacity: 0.9,
+        width: "mapData(packets, 1, 1000, 1.2, 4)",
       },
     },
     {

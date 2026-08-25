@@ -1,93 +1,163 @@
 # Agentic Cybersecurity in IoT Environments
 
-This workspace is set up as a starter project for the research and implementation pipeline described in your brief.
+Implemented device-layer cybersecurity research system built around the
+**DataSense / CIC IIoT Dataset 2025**. The repository provides bounded raw
+ingestion, a versioned feature store, smoke detection artifacts, Findings and
+Gateway validation, a device ABM, risk and communication graphs, DEVICE_ONLY
+SREP, a versioned FastAPI service, and a React dashboard.
 
-## Suggested structure
-- data/raw - raw dataset downloads
-- data/processed - cleaned dataset outputs
-- datasets/ - dataset loaders and preprocessing helpers
-- models/ - detector training, evaluation, and saved model artifacts
-- agents/ - detection, triage, and response flow
-- srep/ - graph workflow and risk logic
-- security/ - attack simulation modules
-- trust/ - trust and access-control logic
-- evaluation/ - benchmark and experiment helpers
-- visualization/ - plotting and graph visualization
+## Data Source
 
-## Next steps
-1. Download the CIC-IDS2017 and TON-IoT datasets into data/raw.
-2. Implement dataset loaders in datasets/.
-3. Build preprocessing and train a detector in models/.
-4. Connect the workflow in agents/ and srep/.
+The canonical source is the DataSense raw release:
 
-## DataSense raw pipeline (current work)
+```text
+data/raw/datasense/dataset/raw_files/   PCAP/PCAPNG and MQTT NDJSON pairs
+data/raw/datasense/docs/site/           attacks.csv and devices.csv metadata
+data/processed/datasense/               project-generated feature-store cache
+```
 
-The canonical research source is the raw DataSense release
-(`data/raw/datasense/dataset/raw_files/`, ~937 pcap+json pairs). Raw PCAP/JSON
-are ingested through bounded streaming parsers with exact temporal handling
-(explicit pre-start tolerance, watermark ordering) into our own aligned
-5-second windows, producing per-device network features, per-sensor behaviour
-features and lossless directed communication records in the versioned store
-under `data/processed/datasense/`. Labels/targets never affect extraction;
-they live only in the isolated session catalog. Vendor processed CSVs are
-optional validation only.
+The backend discovers available sessions from completed extraction-state
+records instead of hardcoding a dataset split. The currently materialized
+sessions are:
 
-- Methodology: `docs/datasense_raw_pipeline_methodology.md`
-- Audits: `docs/datasense_audit.md`, `docs/datasense_raw_audit.md`
+- `attack_recon_host-disc-udp-ping_soil-sensor`
+- `attack_recon_ping-sweep_whole-network`
+- `benign_whole-network3`
+
+`CIS/CIC-IDS`, `CIC-IDS2017`, and `TON-IoT` are **not used by the current
+pipeline**. Their old loader stubs are legacy placeholders only. Vendor
+DataSense processed CSV files are optional validation references and are never
+runtime or model inputs.
+
+## Pipeline
+
+```text
+DataSense PCAP + MQTT NDJSON
+  -> bounded parsers and exact 5-second temporal alignment
+  -> network, behaviour, and directed communication records
+  -> versioned DataSense feature store
+  -> Network Detector + Behavioural Profiler
+  -> Findings -> FindingGateway
+  -> Device ABM + Device Risk Graph + Communication Graph
+  -> DEVICE_ONLY SREP
+  -> FastAPI REST/WebSocket
+  -> React presentation state
+```
+
+Ground-truth labels are isolated to catalog/training/evaluation code. They do
+not enter extracted feature records, runtime Findings, replay events, graphs,
+SREP, or saved replay snapshots.
+
+## Main Directories
+
+- `datasets/datasense/`: catalog, streaming parsers, features, extraction, store
+- `pipeline/`: network detector, behaviour profiler, splits, artifact handling
+- `agents/`: Findings and FindingGateway validation
+- `simulation/`: replay runner, control boundaries, ABM, and graphs
+- `srep/`: DEVICE_ONLY security-risk evaluation
+- `backend/app/`: FastAPI routes, contracts, controller, broker, snapshots
+- `frontend/`: React 18, TypeScript, Vite dashboard
+- `tests/`: organized Python unit, integration, regression, and real-data suites
+- `docs/`: scientific audits, methodology, FastAPI, and React documentation
+
+## Extraction And Models
 
 ```bash
-# bounded extraction (single session)
-python scripts/datasense_extract.py extract --session attack_recon_host-disc-udp-ping_soil-sensor
+# Extract one bounded DataSense session
+python scripts/datasense_extract.py extract \
+  --session attack_recon_host-disc-udp-ping_soil-sensor
 
-# direct raw streaming / cached store reading (same record interface; network+behaviour+communication)
-python scripts/datasense_extract.py stream-raw --session <id>
-python scripts/datasense_extract.py read-store --session <id>
+# Inspect direct-raw and cached records through the same interface
+python scripts/datasense_extract.py stream-raw --session <session-id>
+python scripts/datasense_extract.py read-store --session <session-id>
 
-# INTERNAL FEATURE VALIDATION vs vendor CSV (optional)
+# Train smoke artifacts from raw-derived feature records
+python scripts/datasense_pipeline.py train-network --session <session-ids>
+python scripts/datasense_pipeline.py train-behavior --session <benign-session-id>
+
+# Replay the feature store or the equivalent direct-raw path
+python scripts/datasense_pipeline.py replay-store --session <session-id> \
+  --network-model models/saved_models/network_detector_v1_smoke.joblib \
+  --behavior-model models/saved_models/behavior_profiler_v1_smoke.joblib
+python scripts/datasense_pipeline.py demo-direct-raw --session <session-id> \
+  --network-model models/saved_models/network_detector_v1_smoke.joblib \
+  --behavior-model models/saved_models/behavior_profiler_v1_smoke.joblib
+
+# Optional internal comparison against vendor DataSense features
 python evaluation/datasense_vendor_validation.py
+```
 
-## Downstream pipeline (Prompt 2)
-
-Models consume only the raw-derived feature records above:
+## FastAPI Backend
 
 ```bash
-python scripts/datasense_pipeline.py train-network --session <ids>      # RF detector (smoke)
-python scripts/datasense_pipeline.py train-behavior --session <benign>  # sensor profiles
-python scripts/datasense_pipeline.py replay-store --session <id> \
-    --network-model models/saved_models/network_detector_v1_smoke.joblib \
-    --behavior-model models/saved_models/behavior_profiler_v1_smoke.joblib
-python scripts/datasense_pipeline.py demo-direct-raw --session <id> \
-    --network-model ... --behavior-model ...   # same path straight from raw
+pip install -r requirements.txt
+python -m uvicorn backend.app.main:app --reload
 ```
 
-## Stage-3A FastAPI backend (versioned)
+The API is served under `/api/v1`. It exposes health and session capabilities,
+replay creation and controls, device state, both graph types, DEVICE_ONLY SREP,
+saved snapshots, and replay-scoped WebSocket events at
+`/replays/{replay_id}/events`.
+
+Only one non-terminal replay is active per backend process. Browser refreshes
+recover `CREATED`, starting, `RUNNING`, or `PAUSED` replays through `/health`.
+Restart cooperatively stops and joins the old worker, creates a new replay ID,
+and auto-starts the replacement. REST status remains authoritative while the
+React client uses replay-scoped events for timely synchronization.
+
+See `docs/stage3a_fastapi_backend.md`.
+
+## React Dashboard
 
 ```bash
-pip install fastapi "uvicorn[standard]" httpx     # backend deps
-python -m uvicorn backend.app.main:app --reload   # start API (dev)
-python -m pytest tests/stage3_api -q -ra          # Stage-3A tests
+cd frontend
+npm install
+npm run dev
+npm run type-check
+npm test
+npm run build
 ```
 
-Routes live under `/api/v1/` (health, sessions, replay lifecycle + controls,
-device-state, both graphs, DEVICE_ONLY SREP, saved snapshots, WebSocket
-events). Contracts are versioned Pydantic models; ground truth never enters
-scientific payloads. Docs: `docs/stage3a_fastapi_backend.md`.
+Default development URLs:
 
-Chain: features -> Findings -> FindingGateway -> Device ABM + G_topology /
-G_communication -> SREP (DEVICE_ONLY; simulation parameters in `config.py`).
-Labels are evaluation-only and cannot enter runtime findings.
+- FastAPI: `http://localhost:8000`
+- Vite: `http://localhost:5173`
+- `VITE_API_BASE_URL=http://localhost:8000/api/v1`
+- `VITE_WS_BASE_URL=ws://localhost:8000/api/v1`
 
-## Stage-3B React Dashboard
+The browser validates every REST response and event with Zod. It does not
+calculate scientific values. Startup is guarded while the backend constructs a
+runtime, active replay state is recovered after refresh, and foreign replay
+events are rejected before sequence tracking.
+
+See `docs/stage3b_react_dashboard.md`.
+
+## Tests
 
 ```bash
-pip install fastapi "uvicorn[standard]" httpx    # backend deps (if not installed)
-python -m uvicorn backend.app.main:app --reload  # FastAPI at http://localhost:8000
-cd frontend && npm install                        # frontend deps
-npm run dev                                      # Vite at http://localhost:5173
-npm test                                         # Vitest (21 tests)
-npm run build                                    # production build → frontend/dist/
+# Complete Python suite
+python -m pytest -q
+
+# Focused Python suites
+python -m pytest tests/unit -q
+python -m pytest tests/integration/backend/api -q
+python -m pytest tests/regression -q
+python -m pytest tests/real_data -q
+
+# Frontend suite
+cd frontend
+npm test
 ```
 
-Env vars: `VITE_API_BASE_URL` / `VITE_WS_BASE_URL` (see `frontend/.env.example`).
-Docs: `docs/stage3b_react_dashboard.md` (all routes, contracts, sync strategy).
-```
+Current verified totals are 244 Python tests and 80 frontend tests. Suite
+layout, prerequisites, fixtures, temporary-file policy, and every test module's
+responsibility are documented in `tests.md`.
+
+## Documentation
+
+- `docs/datasense_raw_pipeline_methodology.md`: ingestion and scientific method
+- `docs/datasense_raw_audit.md`: raw release audit
+- `docs/datasense_audit.md`: processed release audit
+- `docs/stage3a_fastapi_backend.md`: backend contracts and replay lifecycle
+- `docs/stage3b_react_dashboard.md`: frontend synchronization and rendering
+- `tests.md`: complete automated-test catalog

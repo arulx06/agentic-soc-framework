@@ -64,6 +64,10 @@ class CommunicationEdgeV1(BaseModel):
     last_timestamp_utc: str | None = None
     broadcast_ever: bool = False
     multicast_ever: bool = False
+    # Current-window deltas (bounded, per replay window)
+    packet_count_delta: int = 0
+    captured_byte_delta: int = 0
+    protocols_in_window: list[str] = Field(default_factory=list)
 
 
 class CommunicationGraphSnapshotV1(BaseModel):

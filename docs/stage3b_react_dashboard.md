@@ -123,14 +123,31 @@ Every response and event is validated. The supported versions are `api_error_v1`
 
 `ReplaySynchronizer` is the single owner of lifecycle synchronization.
 
+- On mount, the dashboard disables creation while it calls `/health`. It
+  adopts any process-local active CREATED, starting, RUNNING, or PAUSED replay
+  and then hydrates authoritative status. Terminal runs and backend-process
+  restarts are not recoverable through health.
+- A Create `replay_already_active` conflict performs the same recovery instead
+  of leaving the page detached from the backend replay.
 - Create performs one POST and stores the returned `CREATED` status. It performs zero scientific GETs.
 - Opening a replay performs status-first hydration. Scientific endpoints are requested only if `windows_processed > 0`.
-- Play, pause, resume, step, and speed changes refresh authoritative status after the control response.
+- Play dispatches a presentation-only `START_REQUESTED` state before the
+  backend runtime is ready. `active_replay_starting` preserves that guard after
+  browser refresh. While startup remains unresolved, status is polled every
+  250 ms until RUNNING, PAUSED, COMPLETED, or FAILED.
+- Play, pause, resume, step, and speed changes refresh authoritative status after the control response. Control responses are acknowledgements; GET status is authoritative.
 - `WINDOW_COMPLETED` schedules one 300 ms coalesced status/scientific refresh. Events received during an active refresh produce at most one trailing refresh.
 - Valid final scientific WebSocket payloads can update the display immediately, but REST performs terminal convergence.
 - `REPLAY_COMPLETED` cancels pending timers, waits for an active refresh, fetches final status, then fetches all four scientific resources.
 - A control that races completion first refreshes status. If the authoritative status contains processed windows, it also recovers final scientific state before surfacing the genuine backend conflict.
-- Restart clears all replay-scoped presentation state and moves the socket to the new replay namespace.
+- Restart clears all replay-scoped presentation state, enters guarded startup,
+  and moves the socket to the new replay namespace. Play, Create, pacing, and
+  repeated Restart remain disabled until startup resolves.
+- WebSocket history and live delivery are replay-scoped by the backend. The
+  browser also rejects foreign envelopes before updating sequence or terminal
+  tracking, so an old replay cannot close or suppress the new stream.
+- Status reducers reject foreign replay IDs, lower sequence numbers, and stale
+  non-terminal responses after a terminal status.
 - Duplicate `event_id` values are rejected by the reducer. Event history is bounded at 1500 envelopes.
 - Gap recovery marks the history incomplete and performs status-first REST hydration.
 
@@ -148,6 +165,16 @@ The page is bounded by a wide application shell and uses a restrained dark techn
 - a read-only snapshot drawer with raw JSON as a secondary technical view;
 - desktop and mobile layouts with no horizontal document overflow.
 
+`windows_total` is available from session-catalog metadata before runtime
+construction when known. Progress and the header display
+`windows_processed / windows_total`; the zero-based `last_window_id` is not
+used as the completed-window count.
+
+Control availability follows authoritative lifecycle state: Create requires no
+active replay or a terminal replay, Pause requires RUNNING, Step requires
+PAUSED, and Save snapshot requires COMPLETED. Startup and initial recovery
+temporarily disable lifecycle controls.
+
 ## 3D Graph Workspace
 
 The default renderer is a lazy-loaded `3d-force-graph` instance. The component owns the imperative instance and calls `pauseAnimation()` and `_destructor()` on cleanup. Custom Three.js geometries, materials, canvas textures, and observers are disposed explicitly.
@@ -158,7 +185,9 @@ Presentation behavior includes:
 - topology fingerprints that rebuild graph data only when nodes or links change;
 - an origin force that keeps disconnected components within a usable overview;
 - attacker geometry, protected-asset halos, risk color/size encoding, and distinct evidence lines;
-- packet-count-based communication line width using the backend aggregate directly;
+- packet-count-based communication line width using the backend per-window
+  delta directly; directional particles animate only for RUNNING windows with
+  a positive packet delta and freeze while PAUSED or COMPLETED;
 - selected-node and one-hop-neighbour emphasis with unrelated elements dimmed;
 - node ID/role/device-type search;
 - selected, all, or off label modes;
@@ -181,7 +210,13 @@ The 2D mode is a distinct typed Cytoscape renderer. It uses a deterministic pres
 
 ## Verification
 
-Automated coverage includes reducer bounds and duplicate rejection, lifecycle authority, status-first hydration, zero-science Create, Play status-only behavior, coalesced refresh, terminal conflict recovery, graph topology stability, coordinate preservation, graph search/neighbourhoods, schema rejection, scientific display rules, and control behavior.
+The Vitest suite currently contains **80 passing tests across 9 files**.
+Automated coverage includes reducer bounds and duplicate rejection, active
+replay recovery, startup guarding, replay-scoped sockets, stale-status
+rejection, status-first hydration, zero-science Create, coalesced refresh,
+terminal conflict recovery, graph topology stability, coordinate preservation,
+graph search/neighbourhoods, schema rejection, scientific display rules, and
+control behavior. See `tests.md` for the per-file catalog.
 
 Browser verification uses the real FastAPI service and Chrome:
 

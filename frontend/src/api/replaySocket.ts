@@ -30,6 +30,7 @@ export class ReplaySocket {
   private ws: WebSocket | null = null;
   private lastSequence = -1;
   private reconnectAttempts = 0;
+  private reconnectTimer: number | null = null;
   private closedByUser = false;
   private terminalSeen = false;
 
@@ -48,6 +49,11 @@ export class ReplaySocket {
       this.scheduleReconnect();
       return;
     }
+
+    this.ws.onopen = () => {
+      this.reconnectAttempts = 0;
+      this.callbacks.onOpen?.();
+    };
 
     this.ws.onmessage = (event) => {
       let raw: unknown;
@@ -74,6 +80,9 @@ export class ReplaySocket {
       const env = isEventEnvelope(raw);
       if (!env) {
         this.callbacks.onError?.("Malformed or unknown event envelope");
+        return;
+      }
+      if (env.replay_id !== this.replayId) {
         return;
       }
 
@@ -113,7 +122,8 @@ export class ReplaySocket {
     this.reconnectAttempts++;
     if (this.reconnectAttempts > MAX_RECONNECT_ATTEMPTS) return;
     const delay = Math.min(1000 * 2 ** (this.reconnectAttempts - 1), 10_000);
-    setTimeout(() => {
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null;
       if (!this.closedByUser && !this.terminalSeen) {
         this.connect();
       }
@@ -122,6 +132,10 @@ export class ReplaySocket {
 
   close(): void {
     this.closedByUser = true;
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.ws) {
       this.ws.close();
       this.ws = null;

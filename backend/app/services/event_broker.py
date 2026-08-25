@@ -19,6 +19,7 @@ from backend.app.config import EVENT_RING_BUFFER_SIZE, SUBSCRIBER_QUEUE_SIZE
 @dataclass
 class Subscriber:
     subscriber_id: int
+    replay_id: str
     queue: deque
     state: str = field(default="ACTIVE")  # ACTIVE | LAGGED | CLOSED
 
@@ -42,24 +43,26 @@ class EventBroker:
         with self._lock:
             self._ring.append(envelope)
             for sub in self._subs.values():
-                if sub.state == "CLOSED":
+                if sub.state == "CLOSED" or sub.replay_id != envelope.replay_id:
                     continue
                 if len(sub.queue) >= self.subscriber_queue_size:
                     sub.state = "LAGGED"
                     continue
                 sub.queue.append(envelope)
 
-    def subscribe(self) -> tuple[int, Subscriber]:
+    def subscribe(self, replay_id: str) -> tuple[int, Subscriber]:
         with self._lock:
             sid = next(self._ids)
             sub = Subscriber(
                 subscriber_id=sid,
+                replay_id=replay_id,
                 queue=deque(maxlen=self.subscriber_queue_size),
             )
             # Replay the current ring so late joiners see recent history;
             # a gap is explicit when the ring has already evicted events
             # (oldest_available_sequence exposed via status endpoint).
-            for env in list(self._ring)[- self.subscriber_queue_size :]:
+            recent = [env for env in self._ring if env.replay_id == replay_id]
+            for env in recent[-self.subscriber_queue_size :]:
                 sub.queue.append(env)
             self._subs[sid] = sub
             return sid, sub

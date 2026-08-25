@@ -29,6 +29,35 @@ describe("Header", () => {
     expect(screen.getByText("SMOKE MODEL ARTIFACTS")).toBeInTheDocument();
     expect(screen.getByText("NOT RESEARCH RESULTS")).toBeInTheDocument();
   });
+
+  it("shows Window windows_processed / windows_total (13/13) not raw W12", async () => {
+    const { ReplayContext } = await import("../state/ReplayContext");
+    const { createInitialReplayState } = await import("../state/replayReducer");
+    const status = {
+      schema_version: "replay_status_v1" as const,
+      replay_id: "r1",
+      session_trace: "trace",
+      state: "COMPLETED" as const,
+      source_mode: "feature_store",
+      pacing: "max" as const,
+      windows_total: 13,
+      windows_processed: 13,
+      last_window_id: 12,
+      sequence_number: 42,
+      findings_emitted: {},
+      error: null,
+      provenance: {},
+    };
+    const state = { ...createInitialReplayState(), replayId: "r1", status, connectionState: "CLOSED" as const };
+    render(
+      <ReplayContext.Provider value={{ client: null as unknown as import("../api/client").ApiClient, state, dispatch: () => {} }}>
+        <Header />
+      </ReplayContext.Provider>
+    );
+    expect(screen.getByText(/Window 13 \/ 13/)).toBeInTheDocument();
+    expect(screen.queryByText(/W12/)).not.toBeInTheDocument();
+    expect(screen.getByText(/seq 42/)).toBeInTheDocument();
+  });
 });
 
 describe("Device-state table", () => {

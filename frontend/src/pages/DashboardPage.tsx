@@ -22,6 +22,7 @@ export function DashboardPage() {
   const [sessions, setSessions] = useState<SessionCapability[]>([]);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [recoveringReplay, setRecoveringReplay] = useState(true);
   const snapshots = useSnapshots(client);
   const synchronizer = useReplayEvents(client, dispatch, state, WS_BASE);
 
@@ -43,8 +44,19 @@ export function DashboardPage() {
     };
   }, [client]);
 
+  useEffect(() => {
+    let active = true;
+    void synchronizer.recoverActiveReplay().finally(() => {
+      if (active) setRecoveringReplay(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [synchronizer]);
+
   const status = state.status;
   const displayError = sessionError ?? state.error;
+  const isRunning = status?.state === "RUNNING";
   const progress = status?.windows_total
     ? Math.min(100, (status.windows_processed / status.windows_total) * 100)
     : 0;
@@ -62,6 +74,7 @@ export function DashboardPage() {
           onRestart={(replayId, options) => synchronizer.restart(replayId, options)}
           onSaveSnapshot={() => (state.replayId ? snapshots.save(state.replayId) : Promise.resolve())}
           pacing={status?.pacing ?? "max"}
+          initializing={recoveringReplay}
           onSpeedChange={(replayId, pacing) => synchronizer.setSpeed(replayId, pacing)}
         />
 
@@ -88,10 +101,13 @@ export function DashboardPage() {
         <EventGapBanner gap={state.gapDetected} truncated={state.eventHistoryTruncated} />
 
         <section className="runtime-summary" aria-label="Replay summary">
-          <Summary label="Replay state" value={status?.state ?? "Not created"} />
+          <Summary
+            label="Replay state"
+            value={state.isStarting ? "Starting..." : status?.state ?? "Not created"}
+          />
           <Summary label="Windows processed" value={`${status?.windows_processed ?? 0} / ${status?.windows_total ?? "?"}`} />
           <Summary label="Findings emitted" value={String(sumValues(status?.findings_emitted))} />
-          <Summary label="Current window" value={String(status?.last_window_id ?? "-")} />
+          <Summary label="Current window" value={status?.last_window_id != null ? String(status.last_window_id + 1) : "-"} />
           <div className="progress-summary">
             <div><span>Replay progress</span><strong className="mono">{Math.round(progress)}%</strong></div>
             <div className="progress-track"><i style={{ width: `${progress}%` }} /></div>
@@ -101,6 +117,7 @@ export function DashboardPage() {
         <GraphWorkspace
           riskSnapshot={state.riskGraph}
           communicationSnapshot={state.commGraph}
+          isRunning={isRunning}
         />
 
         <section className="analysis-grid" aria-label="Replay analysis panels">

@@ -1,7 +1,8 @@
 """Shared fixtures: synthetic bounded PCAP/PCAPNG/NDJSON builders.
 
 These let parser, windowing and feature tests run without the ~250 GB local
-dataset. Real-data integration tests live in test_raw_sessions.py.
+dataset. Real-data integration tests live in
+tests/real_data/test_raw_sessions.py.
 """
 
 from __future__ import annotations
@@ -17,10 +18,8 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-# Deterministic resolution for the legacy suite's plain
-# ``from conftest import ...`` statements: this directory must precede any
-# Stage-3A subdirectory on sys.path (importlib import-mode never inserts it
-# automatically).
+# Test modules import these synthetic builders from this shared conftest.
+# Importlib mode does not add the tests directory automatically.
 TESTS_DIR = Path(__file__).resolve().parent
 if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))

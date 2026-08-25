@@ -33,6 +33,9 @@ class CommunicationGraph:
         self.history_spill = Path(history_spill) if history_spill else None
         self._fh = None
         self.records_applied = 0
+        # Bounded current-window delta state (per directed pair for active window)
+        self.current_window_id: int | None = None
+        self._window_deltas: dict[tuple[str, str], dict] = {}
 
     # ------------------------------------------------------------- nodes
     def _ensure_node(self, entity_id: str) -> None:
@@ -61,6 +64,11 @@ class CommunicationGraph:
     # -------------------------------------------------------------- apply
     def apply(self, record: dict) -> None:
         src, dst = record["src_entity_id"], record["dst_entity_id"]
+        wid = int(record["window_id"])
+        # Bounded per-window delta handling: reset when window advances
+        if self.current_window_id != wid:
+            self.current_window_id = wid
+            self._window_deltas.clear()
         self._ensure_node(src)
         self._ensure_node(dst)
 
@@ -70,8 +78,8 @@ class CommunicationGraph:
                 dst,
                 packet_count_total=0,
                 captured_byte_total=0,
-                first_window_id=int(record["window_id"]),
-                last_window_id=int(record["window_id"]),
+                first_window_id=wid,
+                last_window_id=wid,
                 first_timestamp_utc=record.get("window_start_utc"),
                 last_timestamp_utc=record.get("window_start_utc"),
                 protocols_ever=[],
@@ -81,7 +89,6 @@ class CommunicationGraph:
         data = self.g.edges[src, dst]
         data["packet_count_total"] += int(record["packet_count"])
         data["captured_byte_total"] += int(record.get("captured_byte_count", 0))
-        wid = int(record["window_id"])
         if wid < data["first_window_id"]:
             data["first_window_id"] = wid
             data["first_timestamp_utc"] = record.get("window_start_utc")
@@ -99,6 +106,21 @@ class CommunicationGraph:
         if record.get("multicast_indicator"):
             data["multicast_ever"] = True
 
+        # Current-window delta aggregation (bounded: one entry per active pair)
+        key = (src, dst)
+        delta = self._window_deltas.get(key)
+        if delta is None:
+            delta = {
+                "packet_count_delta": 0,
+                "captured_byte_delta": 0,
+                "protocols_in_window": set(),
+            }
+            self._window_deltas[key] = delta
+        delta["packet_count_delta"] += int(record["packet_count"])
+        delta["captured_byte_delta"] += int(record.get("captured_byte_count", 0))
+        for proto in record.get("protocols") or []:
+            delta["protocols_in_window"].add(proto)
+
         self.records_applied += 1
         if self.history_spill is not None:
             if self._fh is None:
@@ -112,6 +134,27 @@ class CommunicationGraph:
             self.apply(r)
             n += 1
         return n
+
+    def get_window_delta(self, src: str, dst: str) -> dict:
+        """Return current-window delta for edge, or zeroed if no traffic this window."""
+        d = self._window_deltas.get((src, dst))
+        if d is None:
+            return {
+                "packet_count_delta": 0,
+                "captured_byte_delta": 0,
+                "protocols_in_window": [],
+            }
+        return {
+            "packet_count_delta": d["packet_count_delta"],
+            "captured_byte_delta": d["captured_byte_delta"],
+            "protocols_in_window": sorted(d["protocols_in_window"]),
+        }
+
+    def begin_window(self, window_id: int) -> None:
+        """Set current window and clear deltas if window advanced (bounded)."""
+        if self.current_window_id != window_id:
+            self.current_window_id = window_id
+            self._window_deltas.clear()
 
     def close(self) -> None:
         if self._fh is not None:

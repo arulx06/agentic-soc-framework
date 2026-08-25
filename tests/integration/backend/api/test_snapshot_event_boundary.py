@@ -15,14 +15,20 @@ from fastapi.testclient import TestClient
 
 from backend.app.contracts.events_v1 import ReplayEventType
 from backend.app.main import app
+from backend.app.services.snapshot_store import SnapshotStore
 
 SESSION = "attack_recon_host-disc-udp-ping_soil-sensor"
 
 
 @pytest.fixture
-def client():
-    with TestClient(app) as c:
-        yield c
+def client(tmp_path):
+    previous_store = app.state.snapshot_store
+    app.state.snapshot_store = SnapshotStore(tmp_path / "snapshots")
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        app.state.snapshot_store = previous_store
 
 
 def _wait_terminal(client, rid, timeout=60.0):

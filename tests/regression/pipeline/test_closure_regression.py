@@ -10,6 +10,7 @@ from datasets.datasense.devices import DeviceInventory, DeviceRecord
 from datasets.datasense.window_sort import WindowSorter
 from pipeline.behavior_profiler import BehaviorProfiler
 from pipeline.network_detector import NetworkDetector
+from tests.support.paths import DATASENSE_STORE_ROOT
 
 
 def _inventory():
@@ -146,15 +147,12 @@ def _trained_detector():
     return detector, rows[200:260]
 
 
-REPO_STORE = None  # set in conftest-style below
+REPO_STORE = DATASENSE_STORE_ROOT
 
 
 def test_network_row_vs_batch_equivalent():
     global REPO_STORE
-    REPO_STORE = (
-        __import__("pathlib").Path(__file__).resolve().parents[1]
-        / "data/processed/datasense"
-    )
+    REPO_STORE = DATASENSE_STORE_ROOT
     detector, rows = _trained_detector()
     batch = detector.predict_proba_batch(rows)
     single = [detector.predict_proba_row(r) for r in rows]
@@ -171,10 +169,7 @@ def test_network_row_vs_batch_equivalent():
 
 def test_findings_from_records_one_per_row_ordered():
     global REPO_STORE
-    REPO_STORE = (
-        __import__("pathlib").Path(__file__).resolve().parents[1]
-        / "data/processed/datasense"
-    )
+    REPO_STORE = DATASENSE_STORE_ROOT
     detector, rows = _trained_detector()
     trace = opaque_trace("s")
     findings = detector.findings_from_records(

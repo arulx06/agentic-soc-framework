@@ -86,3 +86,96 @@ describe("restart namespace handling", () => {
     expect(state.deviceStates).toHaveLength(0);
   });
 });
+
+// ─── isStarting lifecycle ───────────────────────────────────────────────────
+
+describe("isStarting lifecycle", () => {
+  it("REPLAY_SET with null status sets isStarting true (Restart)", () => {
+    let state = makeInitialState();
+    state = replayReducer(state, { type: "REPLAY_SET", replayId: "r2", status: null });
+    expect(state.isStarting).toBe(true);
+  });
+
+  it("REPLAY_SET with CREATED does not set isStarting (Create)", () => {
+    let state = makeInitialState();
+    const status = {
+      schema_version: "replay_status_v1" as const,
+      replay_id: "r1",
+      session_trace: "trace",
+      state: "CREATED" as const,
+      source_mode: "feature_store",
+      pacing: "max" as const,
+      windows_total: 13,
+      windows_processed: 0,
+      last_window_id: null,
+      sequence_number: 0,
+      findings_emitted: {},
+      error: null,
+      provenance: {},
+    };
+    state = replayReducer(state, { type: "REPLAY_SET", replayId: "r1", status });
+    expect(state.isStarting).toBe(false);
+  });
+
+  it("STATUS RUNNING clears isStarting, CREATED keeps it", () => {
+    let state = makeInitialState({ replayId: "r2", isStarting: true });
+    const created = {
+      schema_version: "replay_status_v1" as const,
+      replay_id: "r2",
+      session_trace: "trace",
+      state: "CREATED" as const,
+      source_mode: "feature_store",
+      pacing: "max" as const,
+      windows_total: 13,
+      windows_processed: 0,
+      last_window_id: null,
+      sequence_number: 1,
+      findings_emitted: {},
+      error: null,
+      provenance: {},
+    };
+    state = replayReducer(state, { type: "STATUS", payload: created });
+    expect(state.isStarting).toBe(true);
+    const running = { ...created, state: "RUNNING" as const };
+    state = replayReducer(state, { type: "STATUS", payload: running });
+    expect(state.isStarting).toBe(false);
+  });
+
+  it("transient ERROR does not reopen Play while startup is unresolved", () => {
+    let state = makeInitialState({ isStarting: true });
+    state = replayReducer(state, { type: "ERROR", message: "boom" });
+    expect(state.isStarting).toBe(true);
+    state = replayReducer(state, { type: "START_CANCELLED" });
+    expect(state.isStarting).toBe(false);
+  });
+
+  it("terminal status cannot regress to stale RUNNING status", () => {
+    const completed = {
+      schema_version: "replay_status_v1" as const,
+      replay_id: "r1",
+      session_trace: "trace",
+      state: "COMPLETED" as const,
+      source_mode: "feature_store",
+      pacing: "max" as const,
+      windows_total: 13,
+      windows_processed: 13,
+      last_window_id: 12,
+      sequence_number: 50,
+      findings_emitted: {},
+      error: null,
+      provenance: {},
+    };
+    let state = makeInitialState({ status: completed });
+    state = replayReducer(state, {
+      type: "STATUS",
+      payload: {
+        ...completed,
+        state: "RUNNING",
+        windows_processed: 5,
+        last_window_id: 4,
+        sequence_number: 20,
+      },
+    });
+    expect(state.status).toBe(completed);
+  });
+});

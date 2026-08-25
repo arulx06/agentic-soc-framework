@@ -32,6 +32,7 @@ from backend.app.contracts.events_v1 import EventEnvelopeV1, ReplayEventType
 from backend.app.contracts.replay_v1 import PacingSpeed, ReplayState, ReplayStatusV1
 from backend.app.services.event_broker import EventBroker
 from backend.app.services.session_catalog import SessionCatalog, opaque_session_trace
+from simulation.replay import ReplayCancelledError
 
 
 class ControllerError(Exception):
@@ -59,15 +60,21 @@ class _Run:
     pending_steps: int = 0
     created_at: float = field(default_factory=time.monotonic)
     findings_emitted: dict = field(default_factory=dict)
+    windows_total: int | None = None
+    cancel_requested: bool = False
 
     def status(self) -> ReplayStatusV1:
         rt = self.runtime
-        windows_total = None
+        windows_total = self.windows_total
         last_wid = None
         if rt is not None:
             last_wid = rt.runner.last_processed_wid
             diag = getattr(rt.runner, "_last_summary", {}).get("windows")
-            windows_total = diag
+            # Final runner summary is authoritative at completion, but early catalog total is needed for progress
+            if diag is not None:
+                windows_total = diag
+            elif windows_total is None:
+                windows_total = None
         return ReplayStatusV1(
             replay_id=self.replay_id,
             session_trace=self.session_trace,
@@ -96,6 +103,7 @@ class ReplayController:
         self.catalog = catalog or SessionCatalog()
         self.sleeper = sleeper
         self._lock = threading.RLock()
+        self._lifecycle_lock = threading.RLock()
         self._runs: dict[str, _Run] = {}
         self._active_id: str | None = None
 
@@ -105,24 +113,24 @@ class ReplayController:
         with self._lock:
             seq = run.sequence
             run.sequence += 1
-        envelope = EventEnvelopeV1(
-            replay_id=run.replay_id,
-            event_id=f"{run.replay_id}-{seq}",
-            sequence_number=seq,
-            event_type=event_type,
-            logical_timestamp=data.pop("logical_timestamp", None),
-            window_id=data.pop("window_id", None),
-            entity_id=data.pop("entity_id", None),
-            source_component=data.pop(
-                "source_component", "backend.app.services.replay_controller"
-            ),
-            payload=explicit_payload if explicit_payload is not None else data,
-            provenance={
-                "session_trace": run.session_trace,
-                "source_mode": run.source_mode,
-            },
-        )
-        self.broker.publish(envelope)
+            envelope = EventEnvelopeV1(
+                replay_id=run.replay_id,
+                event_id=f"{run.replay_id}-{seq}",
+                sequence_number=seq,
+                event_type=event_type,
+                logical_timestamp=data.pop("logical_timestamp", None),
+                window_id=data.pop("window_id", None),
+                entity_id=data.pop("entity_id", None),
+                source_component=data.pop(
+                    "source_component", "backend.app.services.replay_controller"
+                ),
+                payload=explicit_payload if explicit_payload is not None else data,
+                provenance={
+                    "session_trace": run.session_trace,
+                    "source_mode": run.source_mode,
+                },
+            )
+            self.broker.publish(envelope)
         return envelope
 
     # ------------------------------------------------------------- snapshots
@@ -181,7 +189,17 @@ class ReplayController:
 
     # ------------------------------------------------------------ lifecycle
     def create_replay(self, *, session_id: str, source_mode: str, pacing: PacingSpeed) -> str:
+        with self._lifecycle_lock:
+            return self._create_replay(
+                session_id=session_id,
+                source_mode=source_mode,
+                pacing=pacing,
+            )
+
+    def _create_replay(self, *, session_id: str, source_mode: str, pacing: PacingSpeed) -> str:
         terminal_to_join: threading.Thread | None = None
+        terminal_id: str | None = None
+        early_windows_total: int | None = None
         with self._lock:
             if self._active_id is not None:
                 active = self._runs.get(self._active_id)
@@ -199,11 +217,10 @@ class ReplayController:
                     ReplayState.COMPLETED,
                     ReplayState.FAILED,
                 ):
-                    # Terminal replay must not permanently block creation.
-                    # Evict it cleanly (pop + clear active) and join outside lock.
+                    # Terminal replay must not permanently block creation, but
+                    # it remains registered until finalization has stopped.
                     terminal_to_join = active.thread
-                    self._runs.pop(self._active_id, None)
-                    self._active_id = None
+                    terminal_id = self._active_id
             caps = self.catalog.capabilities(session_id)
             if caps is None:
                 raise ControllerError("unknown_session", f"unknown session {session_id!r}", 404)
@@ -214,9 +231,23 @@ class ReplayController:
                     f"(available: {caps['supported_source_modes']})",
                     409,
                 )
+            early_windows_total = caps.get("window_count")
+            if not isinstance(early_windows_total, int):
+                early_windows_total = None
 
         if terminal_to_join is not None:
             terminal_to_join.join(timeout=5)
+            if terminal_to_join.is_alive():
+                raise ControllerError(
+                    "replay_stopping",
+                    f"replay {terminal_id} is still finalizing",
+                    409,
+                )
+        if terminal_id is not None:
+            with self._lock:
+                self._runs.pop(terminal_id, None)
+                if self._active_id == terminal_id:
+                    self._active_id = None
 
         replay_id = uuid.uuid4().hex[:12]
         trace = opaque_session_trace(session_id)
@@ -228,6 +259,7 @@ class ReplayController:
             session_trace=trace,
             source_mode=source_mode,
             pacing=pacing,
+            windows_total=early_windows_total,
         )
         with self._lock:
             self._runs[replay_id] = run
@@ -243,6 +275,10 @@ class ReplayController:
 
     def _worker(self, run: _Run, *, start_paused: bool = False) -> None:
         try:
+            # Cooperative cancellation before heavy runtime build
+            with self._lock:
+                if run.cancel_requested:
+                    raise ReplayCancelledError("cancelled before runtime build")
             runtime = build_runtime(
                 replay_id=run.replay_id,
                 session_trace=run.session_trace,
@@ -253,6 +289,12 @@ class ReplayController:
                 sleeper=self.sleeper,
             )
             with self._lock:
+                if run.cancel_requested:
+                    try:
+                        runtime.close()
+                    except Exception:
+                        pass
+                    raise ReplayCancelledError("cancelled after runtime build")
                 run.runtime = runtime
 
             def sink(event_type: str, **data) -> None:
@@ -314,9 +356,7 @@ class ReplayController:
                 import traceback as _tb
 
                 _tb.print_exc()
-            cancelled = isinstance(exc, __import__(
-                "simulation.replay", fromlist=["ReplayCancelledError"]
-            ).ReplayCancelledError)
+            cancelled = isinstance(exc, ReplayCancelledError)
             with self._lock:
                 run.error = f"{type(exc).__name__}: {exc}"
                 if cancelled:
@@ -337,6 +377,12 @@ class ReplayController:
 
     # -------------------------------------------------------------- controls
     def _ensure_active_runnable(self, run: _Run) -> None:
+        if run.cancel_requested:
+            raise ControllerError(
+                "replay_stopping",
+                f"replay {run.replay_id} is stopping",
+                409,
+            )
         if run.state == ReplayState.FAILED:
             raise ControllerError(
                 "replay_failed",
@@ -417,27 +463,36 @@ class ReplayController:
         is started immediately. Optional overrides (session_id/source_mode
         /pacing) replace the previous replay's values; omitted fields are
         retained for backward compatibility."""
-        with self._lock:
-            run = self._require(replay_id)
-            if run.runtime is not None:
-                run.runtime.control.cancel()
-            self._runs.pop(replay_id, None)
-            if self._active_id == replay_id:
-                self._active_id = None
-        if run.thread is not None:
-            run.thread.join(timeout=10)
-        target_session = session_id if session_id is not None else run.scenario_id
-        target_source = source_mode if source_mode is not None else run.source_mode
-        target_pacing: PacingSpeed | str = pacing if pacing is not None else run.pacing
-        if isinstance(target_pacing, str):
-            target_pacing = PacingSpeed(target_pacing)
-        new_id = self.create_replay(
-            session_id=target_session,
-            source_mode=target_source,
-            pacing=target_pacing,
-        )
-        self.play(new_id)
-        return new_id
+        with self._lifecycle_lock:
+            with self._lock:
+                run = self._require(replay_id)
+                run.cancel_requested = True
+                if run.runtime is not None:
+                    run.runtime.control.cancel()
+            if run.thread is not None:
+                run.thread.join(timeout=10)
+                if run.thread.is_alive():
+                    raise ControllerError(
+                        "restart_timeout",
+                        f"replay {replay_id} did not stop before restart timeout",
+                        409,
+                    )
+            with self._lock:
+                self._runs.pop(replay_id, None)
+                if self._active_id == replay_id:
+                    self._active_id = None
+            target_session = session_id if session_id is not None else run.scenario_id
+            target_source = source_mode if source_mode is not None else run.source_mode
+            target_pacing: PacingSpeed | str = pacing if pacing is not None else run.pacing
+            if isinstance(target_pacing, str):
+                target_pacing = PacingSpeed(target_pacing)
+            new_id = self._create_replay(
+                session_id=target_session,
+                source_mode=target_source,
+                pacing=target_pacing,
+            )
+            self.play(new_id)
+            return new_id
 
     def set_pacing(self, replay_id: str, speed: PacingSpeed | str) -> None:
         if isinstance(speed, str):
@@ -494,6 +549,7 @@ class ReplayController:
     def shutdown(self) -> None:
         with self._lock:
             for run in list(self._runs.values()):
+                run.cancel_requested = True
                 if run.runtime is not None:
                     run.runtime.control.cancel()
             ids = list(self._runs)

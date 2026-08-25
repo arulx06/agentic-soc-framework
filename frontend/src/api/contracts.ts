@@ -152,6 +152,9 @@ export const CommunicationEdgeV1Schema = z.object({
   last_timestamp_utc: z.string().nullable(),
   broadcast_ever: z.boolean(),
   multicast_ever: z.boolean(),
+  packet_count_delta: z.number().optional().default(0),
+  captured_byte_delta: z.number().optional().default(0),
+  protocols_in_window: z.array(z.string()).optional().default([]),
 });
 export type CommunicationEdgeV1 = z.infer<typeof CommunicationEdgeV1Schema>;
 
@@ -239,6 +242,7 @@ export const HealthResponseSchema = z.object({
   api_version: z.string(),
   contract_versions: z.record(z.string()),
   active_replay: z.string().nullable().optional(),
+  active_replay_starting: z.boolean().default(false),
   artifact_readiness: z.record(z.boolean()).default({}),
   scientific_ready: z.boolean(),
 });

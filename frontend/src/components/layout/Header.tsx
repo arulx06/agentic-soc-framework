@@ -24,7 +24,7 @@ export function Header() {
         </span>
         {status && (
           <span className="runtime-position mono">
-            W{status.last_window_id ?? "-"} / {status.windows_total ?? "?"}
+            Window {status.windows_processed} / {status.windows_total ?? "?"}
             <small>seq {status.sequence_number}</small>
           </span>
         )}

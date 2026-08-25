@@ -29,12 +29,14 @@ interface Props {
   riskSnapshot: DeviceRiskGraphSnapshotV1 | null;
   communicationSnapshot: CommunicationGraphSnapshotV1 | null;
   initialKind?: GraphKind;
+  isRunning?: boolean;
 }
 
 export function GraphWorkspace({
   riskSnapshot,
   communicationSnapshot,
   initialKind = "risk",
+  isRunning = false,
 }: Props) {
   const riskData = useStableGraph(riskSnapshot);
   const communicationData = useStableGraph(communicationSnapshot);
@@ -221,6 +223,7 @@ export function GraphWorkspace({
                 layoutSignal={layoutSignal}
                 onNodeSelect={selectNode}
                 onLinkSelect={selectLink}
+                isRunning={isRunning}
               />
             </Suspense>
           ) : (

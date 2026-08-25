@@ -36,6 +36,14 @@ function makeStatus(overrides: Partial<ReplayStatusV1> = {}): ReplayStatusV1 {
 function makeClient(overrides: Partial<ReplayLifecycleClient> = {}) {
   const created = { ...makeStatus(), state: "CREATED" as const };
   return {
+    getHealth: vi.fn(async () => ({
+      service: "ok",
+      api_version: "v1",
+      contract_versions: {},
+      active_replay: null,
+      artifact_readiness: {},
+      scientific_ready: true,
+    })),
     createReplay: vi.fn(async () => ({ replay_id: "r1", status: created })),
     getStatus: vi.fn(async () => created),
     play: vi.fn(async () => ({ replay_id: "r1", state: "RUNNING" as const })),
@@ -108,6 +116,125 @@ describe("ReplaySynchronizer lifecycle authority", () => {
     expect(client.getStatus).toHaveBeenCalledOnce();
     expect(client.getDeviceRiskGraph).not.toHaveBeenCalled();
     expect(harness.state().status?.state).toBe("RUNNING");
+  });
+
+  it("Play remains in starting state while backend runtime is still CREATED", async () => {
+    const created = makeStatus({ state: "CREATED" });
+    const client = makeClient({ getStatus: vi.fn(async () => created) });
+    const harness = makeHarness(client);
+    harness.setReplay();
+
+    await harness.synchronizer.control("play", "r1");
+
+    expect(harness.state().status?.state).toBe("CREATED");
+    expect(harness.state().isStarting).toBe(true);
+  });
+
+  it("duplicate Play conflict is reconciled when status is already RUNNING", async () => {
+    const running = makeStatus({ state: "RUNNING", sequence_number: 2 });
+    const client = makeClient({
+      play: vi.fn(async () => {
+        throw new BackendConflictError(409, "invalid_transition", "replay already running");
+      }),
+      getStatus: vi.fn(async () => running),
+    });
+    const harness = makeHarness(client);
+    harness.setReplay();
+
+    await harness.synchronizer.control("play", "r1");
+
+    expect(harness.state().status?.state).toBe("RUNNING");
+    expect(harness.state().isStarting).toBe(false);
+    expect(harness.state().error).toBeNull();
+  });
+
+  it("duplicate Play during runtime construction remains guarded without a notice", async () => {
+    const created = makeStatus({ state: "CREATED", sequence_number: 2 });
+    const client = makeClient({
+      play: vi.fn(async () => {
+        throw new BackendConflictError(409, "invalid_transition", "replay already running");
+      }),
+      getStatus: vi.fn(async () => created),
+    });
+    const harness = makeHarness(client);
+    harness.setReplay();
+
+    await harness.synchronizer.control("play", "r1");
+
+    expect(harness.state().status?.state).toBe("CREATED");
+    expect(harness.state().isStarting).toBe(true);
+    expect(harness.state().error).toBeNull();
+  });
+
+  it("recovers an active backend replay after browser state is lost", async () => {
+    const running = makeStatus({ replay_id: "r-active", state: "RUNNING" });
+    const client = makeClient({
+      getHealth: vi.fn(async () => ({
+        service: "ok",
+        api_version: "v1",
+        contract_versions: {},
+        active_replay: "r-active",
+        artifact_readiness: {},
+        scientific_ready: true,
+      })),
+      getStatus: vi.fn(async () => running),
+    });
+    const harness = makeHarness(client);
+
+    expect(await harness.synchronizer.recoverActiveReplay()).toBe(true);
+    expect(harness.state().replayId).toBe("r-active");
+    expect(harness.state().status?.state).toBe("RUNNING");
+  });
+
+  it("recovered CREATED replay stays guarded when its worker is already starting", async () => {
+    const created = makeStatus({ replay_id: "r-active", state: "CREATED" });
+    const client = makeClient({
+      getHealth: vi.fn(async () => ({
+        service: "ok",
+        api_version: "v1",
+        contract_versions: {},
+        active_replay: "r-active",
+        active_replay_starting: true,
+        artifact_readiness: {},
+        scientific_ready: true,
+      })),
+      getStatus: vi.fn(async () => created),
+    });
+    const harness = makeHarness(client);
+
+    await harness.synchronizer.recoverActiveReplay();
+
+    expect(harness.state().status?.state).toBe("CREATED");
+    expect(harness.state().isStarting).toBe(true);
+  });
+
+  it("Create conflict adopts the backend active replay instead of showing 409", async () => {
+    const paused = makeStatus({ replay_id: "r-active", state: "PAUSED" });
+    const client = makeClient({
+      createReplay: vi.fn(async () => {
+        throw new BackendConflictError(
+          409,
+          "replay_already_active",
+          "replay r-active is already active"
+        );
+      }),
+      getHealth: vi.fn(async () => ({
+        service: "ok",
+        api_version: "v1",
+        contract_versions: {},
+        active_replay: "r-active",
+        artifact_readiness: {},
+        scientific_ready: true,
+      })),
+      getStatus: vi.fn(async () => paused),
+    });
+    const harness = makeHarness(client);
+
+    await harness.synchronizer.createReplay("session", "feature_store", "max");
+
+    expect(harness.state().replayId).toBe("r-active");
+    expect(harness.state().status?.state).toBe("PAUSED");
+    expect(harness.state().error).toBeNull();
   });
 
   it("coalesces WINDOW_COMPLETED bursts before authoritative hydration", async () => {

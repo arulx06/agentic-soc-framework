@@ -5,7 +5,7 @@ import time
 import pytest
 
 from backend.app.services.replay_controller import ControllerError, ReplayController
-from api_fixtures import SESSION_ID, wait_for_state
+from tests.integration.backend.api.api_fixtures import SESSION_ID, wait_for_state
 
 
 @pytest.fixture
@@ -185,7 +185,7 @@ def test_restart_defaults_preserve_previous_values(controller):
 
 
 def test_restart_with_overrides_uses_new_values(controller):
-    from api_fixtures import SESSION_ID as SID
+    from tests.integration.backend.api.api_fixtures import SESSION_ID as SID
     # Find an alternative session to test override
     from backend.app.services.session_catalog import SessionCatalog
     catalog = controller.catalog
@@ -227,6 +227,97 @@ def test_restart_returns_new_id_and_isolated_namespace(controller):
     wait_for_state(controller, rid2, ("COMPLETED",))
     rid3 = controller.create_replay(session_id=SESSION_ID, source_mode="feature_store", pacing="max")
     assert rid3 not in (rid1, rid2)
+
+
+def test_windows_total_available_at_creation(controller):
+    rid = _create(controller)
+    st = controller.status(rid)
+    # windows_total should be known immediately from catalog, not None until completion
+    assert st.windows_total == 13, f"expected early windows_total 13, got {st.windows_total}"
+    assert st.windows_processed == 0
+    controller.play(rid)
+    # After play but before completion, windows_total must remain available
+    st2 = controller.status(rid)
+    assert st2.windows_total == 13
+    wait_for_state(controller, rid, ("COMPLETED",))
+    st3 = controller.status(rid)
+    assert st3.windows_total == 13
+    assert st3.windows_processed == 13
+
+
+def test_progress_advances_during_playback():
+    from backend.app.services.replay_controller import ReplayController
+
+    # Use no sleeper for fast run, but check intermediate progress via status polling
+    controller = ReplayController(sleeper=lambda _s: 0.05)
+    rid = controller.create_replay(session_id=SESSION_ID, source_mode="feature_store", pacing="max")
+    assert controller.status(rid).windows_total == 13
+    controller.play(rid)
+    seen = set()
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        st = controller.status(rid)
+        seen.add(st.windows_processed)
+        if st.state.value == "COMPLETED":
+            break
+        time.sleep(0.05)
+    # Should have seen incremental progress, not just 0 and 13
+    assert 1 in seen or 2 in seen, f"progress did not advance incrementally, seen {sorted(seen)}"
+    assert 13 in seen
+    controller.shutdown()
+
+
+def test_restart_during_runtime_construction_cancels_old_worker():
+    import backend.app.services.replay_controller as rc_module
+    from unittest.mock import patch
+
+    original_build = rc_module.build_runtime
+
+    def slow_build(*args, **kwargs):
+        time.sleep(0.6)
+        return original_build(*args, **kwargs)
+
+    controller = ReplayController(sleeper=lambda _s: 0)
+    with patch.object(rc_module, "build_runtime", side_effect=slow_build):
+        rid1 = controller.create_replay(session_id=SESSION_ID, source_mode="feature_store", pacing="max")
+        controller.play(rid1)
+        time.sleep(0.15)  # ensure worker entered build_runtime and thread is alive
+        run1 = controller._runs.get(rid1)
+        assert run1 is not None and run1.thread is not None and run1.thread.is_alive()
+        assert run1.runtime is None, "runtime should still be None while building"
+        # Restart while old worker is still building
+        rid2 = controller.restart(rid1)
+        assert rid2 != rid1
+        assert rid1 not in controller._runs
+        # Old thread should have been joined and not continue processing
+        time.sleep(0.7)
+        assert not run1.thread.is_alive(), "old worker should have exited after cancel"
+        # New replay should be running/completing normally
+        st2 = wait_for_state(controller, rid2, ("RUNNING", "COMPLETED", "PAUSED"))
+        assert st2.state.value in ("RUNNING", "COMPLETED", "PAUSED")
+        assert st2.windows_total == 13
+        controller.shutdown()
+
+
+def test_repeated_restarts_no_leak():
+    controller = ReplayController(sleeper=lambda _s: 0.02)
+    rid = _create(controller)
+    controller.play(rid)
+    for _ in range(3):
+        # Restart repeatedly without waiting for completion
+        time.sleep(0.1)
+        new_rid = controller.restart(rid)
+        assert new_rid != rid
+        assert rid not in controller._runs
+        rid = new_rid
+        # New replay auto-starts, should be CREATED or RUNNING
+        st = controller.status(rid)
+        assert st.state.value in ("CREATED", "RUNNING")
+    # Final replay should complete normally
+    st = wait_for_state(controller, rid, ("COMPLETED",))
+    assert st.windows_processed == 13
+    assert st.windows_total == 13
+    controller.shutdown()
 
 
 def test_unknown_session_create_404(controller):

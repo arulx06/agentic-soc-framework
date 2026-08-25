@@ -5,15 +5,17 @@ Fails if ANY device risk, replay-state or SREP scientific field differs.
 Ordering diagnostics are compared separately as operational data.
 """
 
-from pathlib import Path
-
 import pytest
+from tests.support.paths import (
+    ATTACKS_CSV,
+    BEHAVIOR_MODEL_PATH as BEHAVIOR_MODEL,
+    DATASENSE_RAW_ROOT,
+    DATASENSE_STORE_ROOT as STORE,
+    DEVICES_CSV,
+    NETWORK_MODEL_PATH as NETWORK_MODEL,
+)
 
-REPO = Path(__file__).resolve().parents[1]
-STORE = REPO / "data/processed/datasense"
 SESSION = "attack_recon_host-disc-udp-ping_soil-sensor"
-NETWORK_MODEL = REPO / "models/saved_models/network_detector_v1_smoke.joblib"
-BEHAVIOR_MODEL = REPO / "models/saved_models/behavior_profiler_v1_smoke.joblib"
 
 pytestmark = pytest.mark.skipif(
     not (
@@ -28,7 +30,7 @@ pytestmark = pytest.mark.skipif(
 def _inventory():
     from datasets.datasense.devices import DeviceInventory
 
-    return DeviceInventory.load(REPO / "data/raw/datasense/docs/site/devices.csv")
+    return DeviceInventory.load(DEVICES_CSV)
 
 
 def _load_models():
@@ -57,8 +59,8 @@ def _catalog_session():
     from datasets.datasense.catalog import build_catalog
 
     catalog, _ = build_catalog(
-        REPO / "data/raw/datasense/dataset/raw_files",
-        REPO / "data/raw/datasense/docs/site/attacks.csv",
+        DATASENSE_RAW_ROOT,
+        ATTACKS_CSV,
     )
     return next(r for r in catalog if r.scenario_id == SESSION)
 

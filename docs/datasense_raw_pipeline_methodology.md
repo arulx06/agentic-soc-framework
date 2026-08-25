@@ -4,9 +4,10 @@
 - **Scope:** Part I — RAW INGESTION + FEATURE FOUNDATION. Part II — the
   downstream research pipeline (models → Findings → Gateway → ABM/graphs →
 SREP) consuming only those raw-derived records. The five-agent coordination
-workflow, Blackboard, orchestration layer and frontend are not implemented.
-The Finding Gateway exists in the agents package but is not the deferred
-multi-agent coordination system.
+workflow, Blackboard, and orchestration layer are not implemented. The
+Finding Gateway exists in the agents package but is not the deferred
+multi-agent coordination system. The later FastAPI and React presentation
+layers are documented separately in the Stage 3A/3B documents.
 - **Companion docs:** `docs/datasense_audit.md` (processed release),
   `docs/datasense_raw_audit.md` (raw release). Both remain authoritative for
   their audit findings; nothing here replaces them.
@@ -106,7 +107,8 @@ extraction code — never a replacement source.
 * vendor processed features (validation only)
 
 Session IDs and labels are provenance/evaluation metadata; they must not
-become model features. Leakage tests enforce this (`tests/test_leakage_schema.py`).
+become model features. Leakage tests enforce this
+(`tests/unit/features/test_leakage_schema.py`).
 
 ## 4. Session catalog
 
@@ -397,7 +399,7 @@ Verified stored row counts:
 |---|---|---|---|
 | `attack_recon_host-disc-udp-ping_soil-sensor` | 572 | 182 | 1,076 |
 | `attack_recon_ping-sweep_whole-network` | **573** | 182 | 1,788 |
-| `benign_whole-network3` (12 h, low profile) | 380,160 | 120,960 | — |
+| `benign_whole-network3` (12 h, low profile) | 380,160 | 120,960 | 707,635 |
 
 * `attack_recon_host-disc-udp-ping_soil-sensor` (audited fixture):
   4,787 packets parsed (matches audit); first packet Δ vs attacks.csv start
@@ -434,7 +436,8 @@ Vendor parity is unchanged by the corrective passes: the fixture contains no
 pre-start events, so the tolerance policy never engages, and the lateness
 horizon (K=12 windows) covers the whole session.
 
-The regression checks run automatically in `tests/test_raw_sessions.py`
+The regression checks run automatically in
+`tests/real_data/test_raw_sessions.py`
 (skipped when the dataset or vendor CSV is unavailable) and on demand via
 `python evaluation/datasense_vendor_validation.py` (**INTERNAL FEATURE
 VALIDATION**).
@@ -471,17 +474,18 @@ research replay across all extracted sessions. The genuine benign capture
 HAS been extracted (~190.6 MB peak RSS) and used for smoke behavioural
 training, so it no longer appears in this list.
 
-At Stage-2 closure, no Stage-3 application layer had been implemented.
-The subsequently implemented FastAPI layer is documented separately in
-`docs/stage3a_fastapi_backend.md`.
+At Stage-2 closure, no Stage-3 application layer had been implemented. The
+subsequently implemented FastAPI and React layers are documented separately
+in `docs/stage3a_fastapi_backend.md` and
+`docs/stage3b_react_dashboard.md`.
 
 ## 14. Tests
 
-The Stage-1/2 scientific suite (`python -m pytest tests --ignore=tests/stage3_api
--q -ra`) stands at **172 tests, all passing, zero skips and zero warnings**.
-These are the Prompt 1 / Prompt 2 / closure-pass tests only — the 50 Stage-3A
-API tests documented in `docs/stage3a_fastapi_backend.md` are counted
-separately (combined run: 222). Coverage beyond the earlier list: bounded-fan-in external
+The organized Python suite contains **178 scientific/integration/regression
+tests outside the FastAPI folder** and **66 FastAPI tests** in
+`tests/integration/backend/api`. The canonical combined command is
+`python -m pytest -q` (**244 passing tests**). Coverage beyond the earlier list:
+bounded-fan-in external
 merge (open-reader bound, multi-pass, failure/abandonment cleanup), benign-
 only behavioural-training enforcement (unit + CLI), runtime observation-mask
 enforcement and invariance, end-to-end benign chronological blocks, integer

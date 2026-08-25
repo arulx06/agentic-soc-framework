@@ -23,21 +23,47 @@ export function useReplayEvents(
 
   useEffect(() => {
     if (!replayId) return;
+    let active = true;
+    dispatch({ type: "CONNECTION", state: "CONNECTING" });
     const socket = new ReplaySocket(wsBaseUrl, replayId, {
-      onEvent: (event) => void synchronizer.handleEvent(event),
-      onGap: () => synchronizer.handleGap(replayId),
-      onOpen: () => dispatch({ type: "CONNECTION", state: "OPEN" }),
-      onClose: () => dispatch({ type: "CONNECTION", state: "CLOSED" }),
-      onError: (message) => synchronizer.reportError(new Error(message)),
+      onEvent: (event) => active && void synchronizer.handleEvent(event),
+      onGap: () => active && synchronizer.handleGap(replayId),
+      onOpen: () => active && dispatch({ type: "CONNECTION", state: "OPEN" }),
+      onClose: () => active && dispatch({ type: "CONNECTION", state: "CLOSED" }),
+      onError: () => active && dispatch({ type: "CONNECTION", state: "RECONNECTING" }),
     });
     socket.connect();
     void synchronizer.hydrateReplay(replayId);
 
     return () => {
+      active = false;
       synchronizer.cancelPendingRefresh();
       socket.close();
     };
   }, [dispatch, replayId, synchronizer, wsBaseUrl]);
+
+  useEffect(() => {
+    if (!replayId || !state.isStarting) return;
+    let active = true;
+    let timer: number | null = null;
+
+    const pollUntilStarted = async () => {
+      await synchronizer.refreshStatus(replayId, false);
+      if (
+        active &&
+        stateRef.current.replayId === replayId &&
+        stateRef.current.isStarting
+      ) {
+        timer = window.setTimeout(() => void pollUntilStarted(), 250);
+      }
+    };
+    timer = window.setTimeout(() => void pollUntilStarted(), 250);
+
+    return () => {
+      active = false;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [replayId, state.isStarting, synchronizer]);
 
   return synchronizer;
 }

@@ -10,24 +10,14 @@ from simulation.comparison import assert_scientific_equivalence, scientific_proj
 from simulation.replay import ReplayRunner, ReplayControl
 from simulation.topology import build_topology
 from srep.device_srep import SREPEngine
+from tests.support.paths import DATASENSE_STORE_ROOT, DEVICES_CSV
 
-REPO = None
 SESSION = "attack_recon_host-disc-udp-ping_soil-sensor"
-
-
-def _repo():
-    global REPO
-    if REPO is None:
-        from pathlib import Path
-
-        REPO = Path(__file__).resolve().parents[2]
-    return REPO
-
 
 def _inventory():
     from datasets.datasense.devices import DeviceInventory
 
-    return DeviceInventory.load(_repo() / "data/raw/datasense/docs/site/devices.csv")
+    return DeviceInventory.load(DEVICES_CSV)
 
 
 def _run_replay(with_instrumentation: bool):
@@ -47,7 +37,7 @@ def _run_replay(with_instrumentation: bool):
 
         detector, profiler = load_models()
         gateway = FindingGateway(abm)
-        reader = FeatureStoreReader(_repo() / "data/processed/datasense")
+        reader = FeatureStoreReader(DATASENSE_STORE_ROOT)
         return ReplayRunner(
             reader.iter_network_records(SESSION),
             reader.iter_behavior_records(SESSION),

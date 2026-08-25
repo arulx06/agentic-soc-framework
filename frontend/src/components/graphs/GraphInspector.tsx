@@ -91,13 +91,20 @@ function RiskNodeDetails({ node }: { node: PresentationNode }) {
 function CommunicationLinkDetails({ link }: { link: PresentationLink }) {
   const communication = link.communication;
   if (!communication) return null;
+  const winPackets = (communication as unknown as { packet_count_delta?: number }).packet_count_delta ?? 0;
+  const winBytes = (communication as unknown as { captured_byte_delta?: number }).captured_byte_delta ?? 0;
+  const winProtos =
+    (communication as unknown as { protocols_in_window?: string[] }).protocols_in_window ?? [];
   return (
     <dl className="metadata-list">
       <Metadata label="Source" value={communication.src_entity_id} mono />
       <Metadata label="Destination" value={communication.dst_entity_id} mono />
-      <Metadata label="Packet count" value={String(communication.packet_count_total)} mono />
-      <Metadata label="Captured bytes" value={String(communication.captured_byte_total)} mono />
-      <Metadata label="Protocols" value={communication.protocols_ever.join(", ") || "—"} />
+      <Metadata label="Current window packets" value={String(winPackets)} mono />
+      <Metadata label="Current window bytes" value={String(winBytes)} mono />
+      <Metadata label="Current window protocols" value={winProtos.join(", ") || "—"} />
+      <Metadata label="Total packets" value={String(communication.packet_count_total)} mono />
+      <Metadata label="Total bytes" value={String(communication.captured_byte_total)} mono />
+      <Metadata label="Protocols ever" value={communication.protocols_ever.join(", ") || "—"} />
       <Metadata label="First window" value={nullable(communication.first_window_id)} />
       <Metadata label="Last window" value={nullable(communication.last_window_id)} />
       <Metadata label="Broadcast" value={yesNo(communication.broadcast_ever)} />

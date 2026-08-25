@@ -15,7 +15,7 @@ from datasets.datasense.devices import DeviceInventory, DeviceRecord
 from datasets.datasense.extraction import ExtractionEngine
 from datasets.datasense.feature_store import FeatureStoreReader
 from datasets.datasense.profiles import resolve_profile
-from tests_extraction_helpers import SCENARIO_ID
+from tests.support.extraction import SCENARIO_ID
 
 
 def _inventory():

@@ -24,7 +24,7 @@ interface ReplayContextValue {
   dispatch: (action: ReplayAction) => void;
 }
 
-const ReplayContext = createContext<ReplayContextValue | null>(null);
+export const ReplayContext = createContext<ReplayContextValue | null>(null);
 
 export function ReplayProvider({ children, client }: { children: ReactNode; client?: ApiClient }) {
   const [state, dispatch] = useReducer(

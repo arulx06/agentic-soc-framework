@@ -15,6 +15,7 @@ interface Props {
   onSaveSnapshot: () => Promise<void>;
   pacing: string;
   onSpeedChange: (rid: string, speed: string) => Promise<void>;
+  initializing?: boolean;
 }
 
 export function ReplayControls({
@@ -27,6 +28,7 @@ export function ReplayControls({
   onSaveSnapshot,
   pacing,
   onSpeedChange,
+  initializing = false,
 }: Props) {
   const { state } = useReplayContext();
   const [mode, setMode] = useState("feature_store");
@@ -41,6 +43,7 @@ export function ReplayControls({
   const isTerminal =
     state.status?.state === "COMPLETED" || state.status?.state === "FAILED";
   const isLoading = replayId !== null && state.status === null;
+  const isStarting = state.isStarting;
 
   useEffect(() => setPacingLocal(pacing), [pacing]);
   useEffect(() => {
@@ -99,10 +102,10 @@ export function ReplayControls({
             onChange={(event) => {
               const nextPacing = event.target.value;
               setPacingLocal(nextPacing);
-              if (replayId && !isTerminal && !isLoading)
+              if (replayId && !isTerminal && !isLoading && !isStarting)
                 void run(() => onSpeedChange(replayId, nextPacing));
             }}
-            disabled={!replayId || busy || isTerminal || isLoading}
+            disabled={initializing || !replayId || busy || isTerminal || isLoading || isStarting}
             aria-label="Pacing"
           >
             {["1x", "5x", "10x", "max"].map((option) => (
@@ -117,7 +120,9 @@ export function ReplayControls({
           disabled={
             !selectedSession ||
             !modes.includes(mode) ||
+            initializing ||
             busy ||
+            isStarting ||
             (replayId !== null && !isTerminal)
           }
           onClick={() => selectedSession && void run(() => onCreate(selectedSession, mode, pacingLocal))}
@@ -128,7 +133,9 @@ export function ReplayControls({
           className="button button--primary"
           disabled={
             !replayId ||
+            initializing ||
             isLoading ||
+            isStarting ||
             (replayState !== "CREATED" && replayState !== "PAUSED") ||
             busy
           }
@@ -138,21 +145,21 @@ export function ReplayControls({
         </button>
         <button
           className="button button--secondary"
-          disabled={replayState !== "RUNNING" || busy}
+          disabled={initializing || replayState !== "RUNNING" || busy}
           onClick={() => replayId && void run(() => onControl("pause", replayId))}
         >
           Pause
         </button>
         <button
           className="button button--secondary"
-          disabled={replayState !== "PAUSED" || busy}
+          disabled={initializing || replayState !== "PAUSED" || busy}
           onClick={() => replayId && void run(() => onControl("step", replayId))}
         >
           Step
         </button>
         <button
           className="button button--ghost"
-          disabled={!replayId || busy}
+          disabled={!replayId || busy || initializing || isLoading || isStarting}
           onClick={() =>
             replayId &&
             void run(() =>

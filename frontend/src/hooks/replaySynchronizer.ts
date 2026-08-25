@@ -14,6 +14,7 @@ import type { ReplayAction, ReplayState } from "../state/replayReducer";
 export type ReplayLifecycleClient = Pick<
   ApiClient,
   | "createReplay"
+  | "getHealth"
   | "getStatus"
   | "play"
   | "pause"
@@ -40,7 +41,8 @@ const browserScheduler: ReplayScheduler = {
 export class ReplaySynchronizer {
   private pendingTimer: number | null = null;
   private windowRefresh: Promise<void> | null = null;
-  private trailingWindowRefresh = false;
+  private trailingWindowReplayId: string | null = null;
+  private activeRecovery: Promise<boolean> | null = null;
 
   constructor(
     private readonly client: ReplayLifecycleClient,
@@ -60,6 +62,13 @@ export class ReplaySynchronizer {
         status: response.status,
       });
     } catch (error) {
+      if (
+        error instanceof BackendConflictError &&
+        error.code === "replay_already_active" &&
+        (await this.recoverActiveReplay(false))
+      ) {
+        return;
+      }
       this.reportError(error);
     }
   }
@@ -69,6 +78,14 @@ export class ReplaySynchronizer {
     replayId: string
   ) {
     this.dispatch({ type: "CLEAR_ERROR" });
+    const current = this.getState();
+    const requestedStart =
+      action === "play" &&
+      current.replayId === replayId &&
+      current.status?.state === "CREATED";
+    if (requestedStart) {
+      this.dispatch({ type: "START_REQUESTED" });
+    }
     try {
       await this.client[action](replayId);
       await this.refreshStatus(replayId);
@@ -80,6 +97,16 @@ export class ReplaySynchronizer {
         await this.refreshScientificState(replayId, status);
       }
       if (this.getState().replayId !== replayId) return;
+      if (
+        error instanceof BackendConflictError &&
+        error.code === "invalid_transition" &&
+        (action === "play" || action === "resume") &&
+        (status?.state === "RUNNING" ||
+          (status?.state === "CREATED" && error.message.includes("already running")))
+      ) {
+        return;
+      }
+      if (requestedStart) this.dispatch({ type: "START_CANCELLED" });
       this.reportError(error);
     }
   }
@@ -150,9 +177,9 @@ export class ReplaySynchronizer {
       ]);
       if (this.getState().replayId !== replayId) return false;
       this.dispatch({ type: "DEVICE_STATES", payload: devices.devices });
-      this.dispatch({ type: "RISK_GRAPH", payload: riskGraph });
-      this.dispatch({ type: "COMM_GRAPH", payload: communicationGraph });
-      this.dispatch({ type: "SREP", payload: srep });
+      this.dispatch({ type: "RISK_GRAPH", payload: riskGraph as any });
+      this.dispatch({ type: "COMM_GRAPH", payload: communicationGraph as any });
+      this.dispatch({ type: "SREP", payload: srep as any });
       this.dispatch({ type: "SCIENTIFIC_AVAILABLE" });
       return true;
     } catch (error) {
@@ -170,6 +197,39 @@ export class ReplaySynchronizer {
     const status = await this.refreshStatus(replayId);
     if (status && status.windows_processed > 0) {
       await this.refreshScientificState(replayId, status);
+    }
+  }
+
+  recoverActiveReplay(reportFailure = true): Promise<boolean> {
+    if (this.activeRecovery) return this.activeRecovery;
+    const recovery = this.performActiveReplayRecovery(reportFailure).finally(() => {
+      if (this.activeRecovery === recovery) this.activeRecovery = null;
+    });
+    this.activeRecovery = recovery;
+    return recovery;
+  }
+
+  private async performActiveReplayRecovery(reportFailure: boolean): Promise<boolean> {
+    try {
+      const health = await this.client.getHealth();
+      const replayId = health.active_replay;
+      if (!replayId) return false;
+      const status = await this.client.getStatus(replayId);
+      this.cancelPendingRefresh();
+      this.dispatch({ type: "REPLAY_SET", replayId, status });
+      if (health.active_replay_starting) {
+        this.dispatch({ type: "START_REQUESTED" });
+      }
+      return true;
+    } catch (error) {
+      if (
+        error instanceof BackendConflictError &&
+        (error.status === 404 || error.code === "not_found")
+      ) {
+        return false;
+      }
+      if (reportFailure) this.reportError(error);
+      return false;
     }
   }
 
@@ -209,7 +269,7 @@ export class ReplaySynchronizer {
         this.applyPayload(
           envelope,
           CommunicationGraphSnapshotV1Schema,
-          (payload) => this.dispatch({ type: "COMM_GRAPH", payload })
+          (payload) => this.dispatch({ type: "COMM_GRAPH", payload: payload as any })
         );
         return;
       case "SREP_SNAPSHOT":
@@ -241,7 +301,7 @@ export class ReplaySynchronizer {
   }
 
   cancelPendingRefresh() {
-    this.trailingWindowRefresh = false;
+    this.trailingWindowReplayId = null;
     if (this.pendingTimer !== null) {
       this.scheduler.clearTimeout(this.pendingTimer);
       this.pendingTimer = null;
@@ -255,16 +315,17 @@ export class ReplaySynchronizer {
   private scheduleWindowRefresh(replayId: string) {
     if (this.pendingTimer !== null) return;
     if (this.windowRefresh !== null) {
-      this.trailingWindowRefresh = true;
+      this.trailingWindowReplayId = replayId;
       return;
     }
     this.pendingTimer = this.scheduler.setTimeout(() => {
       this.pendingTimer = null;
       this.windowRefresh = this.refreshWindow(replayId).finally(() => {
         this.windowRefresh = null;
-        if (this.trailingWindowRefresh) {
-          this.trailingWindowRefresh = false;
-          this.scheduleWindowRefresh(replayId);
+        const trailingReplayId = this.trailingWindowReplayId;
+        this.trailingWindowReplayId = null;
+        if (trailingReplayId && this.getState().replayId === trailingReplayId) {
+          this.scheduleWindowRefresh(trailingReplayId);
         }
       });
     }, 300);

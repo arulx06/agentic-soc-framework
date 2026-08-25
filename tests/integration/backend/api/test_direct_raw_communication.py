@@ -9,7 +9,7 @@ import time
 import pytest
 
 from backend.app.services.replay_controller import ReplayController
-from api_fixtures import SESSION_ID, wait_for_state
+from tests.integration.backend.api.api_fixtures import SESSION_ID, wait_for_state
 
 
 @pytest.fixture
