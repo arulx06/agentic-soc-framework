@@ -91,7 +91,7 @@ def build_runtime(
             reader.iter_communication_records(scenario_id),
         )
 
-    def direct_streams() -> tuple[Iterator, Iterator, Iterator]:
+    def direct_streams():
         collect = {}
         catalog_mod = _catalog_module()
         records, _diag = catalog_mod.build_catalog(RAW_ROOT, ATTACKS_CSV_PATH())
@@ -114,18 +114,11 @@ def build_runtime(
             max_event_lateness_ns=int(MAX_LATENESS_SECONDS_DEFAULT * 1e9),
             active_window_capacity=ACTIVE_WINDOW_CAPACITY_DEFAULT,
         )
-
-        def net():
-            for tag, row in fused:
-                if tag == "network":
-                    yield row
-
-        def comm():
-            for tag, row in fused:
-                if tag == "communication":
-                    yield row
-
-        return net(), behavior, comm()
+        # Use single-pass fused_records path: fused contains interleaved
+        # ("network", row) / ("communication", row) tagged rows. The runner
+        # dispatches them in one pass. Splitting into two generators over the
+        # same iterator would exhaust the communication stream.
+        return fused, behavior
 
     def ATTACKS_CSV_PATH():
         from backend.app.config import ATTACKS_CSV
@@ -150,11 +143,10 @@ def build_runtime(
             sleeper=sleeper,
         )
     elif source_mode == "direct_raw":
-        net_s, beh_s, comm_s = direct_streams()
+        fused_s, beh_s = direct_streams()
         runner = ReplayRunner(
-            network_records=net_s,
+            fused_records=fused_s,
             behavior_records=beh_s,
-            communication_records=comm_s,
             detector=detector,
             profiler=profiler,
             gateway=gateway,

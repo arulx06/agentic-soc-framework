@@ -50,6 +50,8 @@ export class ReplaySynchronizer {
   ) {}
 
   async createReplay(sessionId: string, sourceMode: string, pacing: string) {
+    this.dispatch({ type: "CLEAR_ERROR" });
+    this.cancelPendingRefresh();
     try {
       const response = await this.client.createReplay(sessionId, sourceMode, pacing);
       this.dispatch({
@@ -75,8 +77,9 @@ export class ReplaySynchronizer {
       // converge to authoritative state, then retain the genuine conflict.
       const status = await this.refreshStatus(replayId, false);
       if (status && status.windows_processed > 0) {
-        await this.refreshScientificState(replayId);
+        await this.refreshScientificState(replayId, status);
       }
+      if (this.getState().replayId !== replayId) return;
       this.reportError(error);
     }
   }
@@ -98,6 +101,7 @@ export class ReplaySynchronizer {
       // hydration. No scientific request is made until readiness is known.
     } catch (error) {
       await this.refreshStatus(replayId, false);
+      if (this.getState().replayId !== replayId) return;
       this.reportError(error);
     }
   }
@@ -109,6 +113,7 @@ export class ReplaySynchronizer {
       await this.refreshStatus(replayId);
     } catch (error) {
       await this.refreshStatus(replayId, false);
+      if (this.getState().replayId !== replayId) return;
       this.reportError(error);
     }
   }
@@ -126,12 +131,16 @@ export class ReplaySynchronizer {
       }
       return status;
     } catch (error) {
+      if (this.getState().replayId !== replayId) return null;
       if (reportFailure) this.reportError(error);
       return null;
     }
   }
 
-  async refreshScientificState(replayId: string): Promise<boolean> {
+  async refreshScientificState(
+    replayId: string,
+    status?: ReplayStatusV1 | null
+  ): Promise<boolean> {
     try {
       const [devices, riskGraph, communicationGraph, srep] = await Promise.all([
         this.client.getDeviceStates(replayId),
@@ -148,7 +157,7 @@ export class ReplaySynchronizer {
       return true;
     } catch (error) {
       if (this.getState().replayId !== replayId) return false;
-      if (this.isExpectedUnavailable(error, replayId)) {
+      if (this.isExpectedUnavailable(error, replayId, status)) {
         this.dispatch({ type: "SCIENTIFIC_UNAVAILABLE" });
         return false;
       }
@@ -160,7 +169,7 @@ export class ReplaySynchronizer {
   async hydrateReplay(replayId: string) {
     const status = await this.refreshStatus(replayId);
     if (status && status.windows_processed > 0) {
-      await this.refreshScientificState(replayId);
+      await this.refreshScientificState(replayId, status);
     }
   }
 
@@ -182,7 +191,7 @@ export class ReplaySynchronizer {
       case "REPLAY_STEPPED": {
         const status = await this.refreshStatus(replayId);
         if (status && status.windows_processed > 0) {
-          await this.refreshScientificState(replayId);
+          await this.refreshScientificState(replayId, status);
         }
         return;
       }
@@ -262,15 +271,20 @@ export class ReplaySynchronizer {
   }
 
   private async refreshWindow(replayId: string) {
-    await this.refreshStatus(replayId);
-    await this.refreshScientificState(replayId);
+    const status = await this.refreshStatus(replayId);
+    if (status && status.windows_processed > 0) {
+      await this.refreshScientificState(replayId, status);
+    } else if (status) {
+      // Before first window, science not yet available is expected
+      await this.refreshScientificState(replayId, status);
+    }
   }
 
   private async finalRefresh(replayId: string) {
     this.cancelPendingRefresh();
     if (this.windowRefresh) await this.windowRefresh;
-    await this.refreshStatus(replayId);
-    await this.refreshScientificState(replayId);
+    const status = await this.refreshStatus(replayId);
+    await this.refreshScientificState(replayId, status);
   }
 
   private applyPayload<T extends { replay_id: string }>(
@@ -296,13 +310,17 @@ export class ReplaySynchronizer {
     apply(parsed.data);
   }
 
-  private isExpectedUnavailable(error: unknown, replayId: string) {
-    const status = this.getState().status;
+  private isExpectedUnavailable(
+    error: unknown,
+    replayId: string,
+    status?: ReplayStatusV1 | null
+  ) {
+    const s = status !== undefined ? status : this.getState().status;
     return (
       error instanceof BackendConflictError &&
       error.status === 409 &&
       error.code === "no_scientific_state" &&
-      (!status || status.replay_id !== replayId || status.windows_processed === 0)
+      (!s || s.replay_id !== replayId || s.windows_processed === 0)
     );
   }
 }

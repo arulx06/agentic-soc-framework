@@ -275,3 +275,132 @@ describe("Hybrid lifecycle: restart overrides, stale protection, terminal", () =
     expect(harness.state().status?.state).toBe("CREATED");
   });
 });
+
+describe("Stale 409 regression (Issue A)", () => {
+  it("old control error after successful new replay does not reappear", async () => {
+    const completed = makeStatus({ replay_id: "r1", state: "COMPLETED", windows_processed: 13 });
+    // Defer getStatus for r1 to allow interleaving
+    let resolveR1Status: (v: ReplayStatusV1) => void = () => {};
+    const r1StatusPromise = new Promise<ReplayStatusV1>((res) => (resolveR1Status = res));
+    const client = makeClient({
+      play: vi.fn(async () => {
+        throw new BackendConflictError(409, "replay_completed", "restart required");
+      }),
+      getStatus: vi.fn((id: string) => {
+        if (id === "r1") return r1StatusPromise;
+        return Promise.resolve(makeStatus({ replay_id: id, state: "CREATED" }));
+      }),
+      createReplay: vi.fn(async () => ({
+        replay_id: "r2",
+        status: makeStatus({ replay_id: "r2", state: "CREATED" }),
+      })) as any,
+      getDeviceStates: vi.fn(async () => ({
+        schema_version: "device_state_v1" as const,
+        replay_id: "r2",
+        devices: [],
+      })),
+      getDeviceRiskGraph: vi.fn(async () => makeRiskGraph()),
+      getCommunicationGraph: vi.fn(async () => makeCommGraph()),
+      getSrep: vi.fn(async () => makeSrep()),
+    });
+    const harness = makeHarness(client);
+    harness.setReplay(); // r1 CREATED
+
+    const ctrl = harness.synchronizer.control("play", "r1");
+    // Create r2 before r1 status resolves
+    const createP = harness.synchronizer.createReplay("sess2", "feature_store", "max");
+    await createP;
+    expect(harness.state().replayId).toBe("r2");
+    expect(harness.state().error).toBeNull();
+
+    // Now resolve old r1 status (stale)
+    resolveR1Status(completed);
+    await ctrl;
+    // Stale error must not be dispatched into r2
+    expect(harness.state().replayId).toBe("r2");
+    expect(harness.state().error).toBeNull();
+  });
+
+  it("stale refreshStatus error for old replay does not affect new replay", async () => {
+    let rejectR1: (e: unknown) => void = () => {};
+    const r1Promise = new Promise<ReplayStatusV1>((_, rej) => (rejectR1 = rej));
+    const client = makeClient({
+      getStatus: vi.fn((id: string) => {
+        if (id === "r1") return r1Promise;
+        return Promise.resolve(makeStatus({ replay_id: "r2", state: "RUNNING" }));
+      }),
+      createReplay: vi.fn(async () => ({
+        replay_id: "r2",
+        status: makeStatus({ replay_id: "r2", state: "CREATED" }),
+      })) as any,
+    });
+    const harness = makeHarness(client);
+    harness.setReplay(); // r1
+    const oldRefresh = harness.synchronizer.refreshStatus("r1");
+    // Install r2 before old refresh fails
+    await harness.synchronizer.createReplay("sess2", "feature_store", "max");
+    expect(harness.state().replayId).toBe("r2");
+    rejectR1(new BackendConflictError(404, "unknown_replay", "unknown replay 'r1'"));
+    await oldRefresh;
+    expect(harness.state().replayId).toBe("r2");
+    expect(harness.state().error).toBeNull();
+  });
+
+  it("genuine current replay errors remain visible", async () => {
+    const client = makeClient({
+      play: vi.fn(async () => {
+        throw new BackendConflictError(409, "invalid_transition", "pause requires RUNNING");
+      }),
+      getStatus: vi.fn(async () => makeStatus({ state: "CREATED" })),
+    });
+    const harness = makeHarness(client);
+    harness.setReplay();
+    await harness.synchronizer.control("play", "r1");
+    expect(harness.state().error).toContain("pause requires RUNNING");
+    expect(harness.state().replayId).toBe("r1");
+  });
+
+  it("Create clears previous notice and cancels pending refresh", async () => {
+    const scheduler: ReplayScheduler = {
+      setTimeout: vi.fn(() => 1),
+      clearTimeout: vi.fn(),
+    };
+    const client = makeClient();
+    const harness = makeHarness(client, scheduler);
+    harness.setReplay();
+    harness.synchronizer.reportError(new BackendConflictError(409, "replay_completed", "old error"));
+    expect(harness.state().error).toContain("old error");
+    await harness.synchronizer.handleEvent(makeEnvelope("WINDOW_COMPLETED", { replay_id: "r1" }));
+    expect(scheduler.setTimeout).toHaveBeenCalled();
+    await harness.synchronizer.createReplay("sess2", "feature_store", "max");
+    expect(harness.state().error).toBeNull();
+    expect(scheduler.clearTimeout).toHaveBeenCalled();
+  });
+
+  it("no_scientific_state before first window is expected, not error", async () => {
+    const fresh = makeStatus({ state: "CREATED", windows_processed: 0 });
+    const client = makeClient({
+      getStatus: vi.fn(async () => fresh),
+      getDeviceStates: vi.fn(async () => {
+        throw new BackendConflictError(409, "no_scientific_state", "no scientific runtime yet");
+      }),
+      getDeviceRiskGraph: vi.fn(async () => makeRiskGraph()),
+      getCommunicationGraph: vi.fn(async () => makeCommGraph()),
+      getSrep: vi.fn(async () => makeSrep()),
+    });
+    const harness = makeHarness(client);
+    harness.setReplay();
+    await harness.synchronizer.hydrateReplay("r1");
+    expect(client.getDeviceStates).not.toHaveBeenCalled();
+
+    const statusZero = makeStatus({ windows_processed: 0 });
+    const ok = await harness.synchronizer.refreshScientificState("r1", statusZero);
+    expect(ok).toBe(false);
+    expect(harness.state().scientificUnavailable).toBe(true);
+    expect(harness.state().error).toBeNull();
+
+    const statusOne = makeStatus({ windows_processed: 1 });
+    await harness.synchronizer.refreshScientificState("r1", statusOne);
+    expect(harness.state().error).toContain("no_scientific_state");
+  });
+});
