@@ -76,4 +76,18 @@ scientific payloads. Docs: `docs/stage3a_fastapi_backend.md`.
 Chain: features -> Findings -> FindingGateway -> Device ABM + G_topology /
 G_communication -> SREP (DEVICE_ONLY; simulation parameters in `config.py`).
 Labels are evaluation-only and cannot enter runtime findings.
+
+## Stage-3B React Dashboard
+
+```bash
+pip install fastapi "uvicorn[standard]" httpx    # backend deps (if not installed)
+python -m uvicorn backend.app.main:app --reload  # FastAPI at http://localhost:8000
+cd frontend && npm install                        # frontend deps
+npm run dev                                      # Vite at http://localhost:5173
+npm test                                         # Vitest (21 tests)
+npm run build                                    # production build → frontend/dist/
+```
+
+Env vars: `VITE_API_BASE_URL` / `VITE_WS_BASE_URL` (see `frontend/.env.example`).
+Docs: `docs/stage3b_react_dashboard.md` (all routes, contracts, sync strategy).
 ```

@@ -1,0 +1,28 @@
+:root {
+  color-scheme: dark;
+  --bg-canvas: #060a12;
+  --bg-primary: #090f1c;
+  --bg-secondary: #0d1626;
+  --bg-elevated: #111d30;
+  --bg-interactive: #16243a;
+  --bg-hover: #1b2d47;
+  --text-primary: #e7eef8;
+  --text-secondary: #93a4ba;
+  --text-muted: #607189;
+  --accent-blue: #4f8ff7;
+  --accent-cyan: #38bdf8;
+  --accent-teal: #2dd4bf;
+  --accent-green: #34d399;
+  --accent-red: #fb7185;
+  --accent-amber: #fbbf24;
+  --border-subtle: #1c2a3d;
+  --border-strong: #30415a;
+  --focus: #7dd3fc;
+  --shadow: 0 18px 55px rgba(0, 0, 0, 0.34);
+  --radius-small: 4px;
+  --radius-medium: 7px;
+  --font-mono: "IBM Plex Mono", "Cascadia Mono", "SFMono-Regular", monospace;
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --shell-width: 1680px;
+  --graph-height: 610px;
+}
