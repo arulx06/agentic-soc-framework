@@ -1,0 +1,387 @@
+import type { z } from "zod";
+import type { ApiClient } from "../api/client";
+import {
+  CommunicationGraphSnapshotV1Schema,
+  DeviceRiskGraphSnapshotV1Schema,
+  DeviceStateV1Schema,
+  SrepSnapshotV1Schema,
+  type EventEnvelopeV1,
+  type ReplayStatusV1,
+} from "../api/contracts";
+import { BackendConflictError } from "../api/validation";
+import type { ReplayAction, ReplayState } from "../state/replayReducer";
+
+export type ReplayLifecycleClient = Pick<
+  ApiClient,
+  | "createReplay"
+  | "getHealth"
+  | "getStatus"
+  | "play"
+  | "pause"
+  | "resume"
+  | "step"
+  | "restart"
+  | "setSpeed"
+  | "getDeviceStates"
+  | "getDeviceRiskGraph"
+  | "getCommunicationGraph"
+  | "getSrep"
+>;
+
+export interface ReplayScheduler {
+  setTimeout(callback: () => void, delay: number): number;
+  clearTimeout(timer: number): void;
+}
+
+const browserScheduler: ReplayScheduler = {
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+  clearTimeout: (timer) => window.clearTimeout(timer),
+};
+
+export class ReplaySynchronizer {
+  private pendingTimer: number | null = null;
+  private windowRefresh: Promise<void> | null = null;
+  private trailingWindowReplayId: string | null = null;
+  private activeRecovery: Promise<boolean> | null = null;
+
+  constructor(
+    private readonly client: ReplayLifecycleClient,
+    private readonly dispatch: (action: ReplayAction) => void,
+    private readonly getState: () => ReplayState,
+    private readonly scheduler: ReplayScheduler = browserScheduler
+  ) {}
+
+  async createReplay(sessionId: string, sourceMode: string, pacing: string) {
+    this.dispatch({ type: "CLEAR_ERROR" });
+    this.cancelPendingRefresh();
+    try {
+      const response = await this.client.createReplay(sessionId, sourceMode, pacing);
+      this.dispatch({
+        type: "REPLAY_SET",
+        replayId: response.replay_id,
+        status: response.status,
+      });
+    } catch (error) {
+      if (
+        error instanceof BackendConflictError &&
+        error.code === "replay_already_active" &&
+        (await this.recoverActiveReplay(false))
+      ) {
+        return;
+      }
+      this.reportError(error);
+    }
+  }
+
+  async control(
+    action: "play" | "pause" | "resume" | "step",
+    replayId: string
+  ) {
+    this.dispatch({ type: "CLEAR_ERROR" });
+    const current = this.getState();
+    const requestedStart =
+      action === "play" &&
+      current.replayId === replayId &&
+      current.status?.state === "CREATED";
+    if (requestedStart) {
+      this.dispatch({ type: "START_REQUESTED" });
+    }
+    try {
+      await this.client[action](replayId);
+      await this.refreshStatus(replayId);
+    } catch (error) {
+      // A transition may race terminal completion. Refresh first so controls
+      // converge to authoritative state, then retain the genuine conflict.
+      const status = await this.refreshStatus(replayId, false);
+      if (status && status.windows_processed > 0) {
+        await this.refreshScientificState(replayId, status);
+      }
+      if (this.getState().replayId !== replayId) return;
+      if (
+        error instanceof BackendConflictError &&
+        error.code === "invalid_transition" &&
+        (action === "play" || action === "resume") &&
+        (status?.state === "RUNNING" ||
+          (status?.state === "CREATED" && error.message.includes("already running")))
+      ) {
+        return;
+      }
+      if (requestedStart) this.dispatch({ type: "START_CANCELLED" });
+      this.reportError(error);
+    }
+  }
+
+  async restart(
+    replayId: string,
+    options?: { sessionId?: string; sourceMode?: string; pacing?: string }
+  ) {
+    this.dispatch({ type: "CLEAR_ERROR" });
+    try {
+      const response = await this.client.restart(replayId, options);
+      this.cancelPendingRefresh();
+      this.dispatch({
+        type: "REPLAY_SET",
+        replayId: response.new_replay_id,
+        status: null,
+      });
+      // The replay-id change opens the new socket and performs status-first
+      // hydration. No scientific request is made until readiness is known.
+    } catch (error) {
+      await this.refreshStatus(replayId, false);
+      if (this.getState().replayId !== replayId) return;
+      this.reportError(error);
+    }
+  }
+
+  async setSpeed(replayId: string, pacing: string) {
+    this.dispatch({ type: "CLEAR_ERROR" });
+    try {
+      await this.client.setSpeed(replayId, pacing);
+      await this.refreshStatus(replayId);
+    } catch (error) {
+      await this.refreshStatus(replayId, false);
+      if (this.getState().replayId !== replayId) return;
+      this.reportError(error);
+    }
+  }
+
+  async refreshStatus(
+    replayId: string,
+    reportFailure = true
+  ): Promise<ReplayStatusV1 | null> {
+    try {
+      const status = await this.client.getStatus(replayId);
+      if (this.getState().replayId !== replayId) return null;
+      this.dispatch({ type: "STATUS", payload: status });
+      if (status.state === "FAILED" && status.error) {
+        this.dispatch({ type: "ERROR", message: status.error });
+      }
+      return status;
+    } catch (error) {
+      if (this.getState().replayId !== replayId) return null;
+      if (reportFailure) this.reportError(error);
+      return null;
+    }
+  }
+
+  async refreshScientificState(
+    replayId: string,
+    status?: ReplayStatusV1 | null
+  ): Promise<boolean> {
+    try {
+      const [devices, riskGraph, communicationGraph, srep] = await Promise.all([
+        this.client.getDeviceStates(replayId),
+        this.client.getDeviceRiskGraph(replayId),
+        this.client.getCommunicationGraph(replayId),
+        this.client.getSrep(replayId),
+      ]);
+      if (this.getState().replayId !== replayId) return false;
+      this.dispatch({ type: "DEVICE_STATES", payload: devices.devices });
+      this.dispatch({ type: "RISK_GRAPH", payload: riskGraph as any });
+      this.dispatch({ type: "COMM_GRAPH", payload: communicationGraph as any });
+      this.dispatch({ type: "SREP", payload: srep as any });
+      this.dispatch({ type: "SCIENTIFIC_AVAILABLE" });
+      return true;
+    } catch (error) {
+      if (this.getState().replayId !== replayId) return false;
+      if (this.isExpectedUnavailable(error, replayId, status)) {
+        this.dispatch({ type: "SCIENTIFIC_UNAVAILABLE" });
+        return false;
+      }
+      this.reportError(error);
+      return false;
+    }
+  }
+
+  async hydrateReplay(replayId: string) {
+    const status = await this.refreshStatus(replayId);
+    if (status && status.windows_processed > 0) {
+      await this.refreshScientificState(replayId, status);
+    }
+  }
+
+  recoverActiveReplay(reportFailure = true): Promise<boolean> {
+    if (this.activeRecovery) return this.activeRecovery;
+    const recovery = this.performActiveReplayRecovery(reportFailure).finally(() => {
+      if (this.activeRecovery === recovery) this.activeRecovery = null;
+    });
+    this.activeRecovery = recovery;
+    return recovery;
+  }
+
+  private async performActiveReplayRecovery(reportFailure: boolean): Promise<boolean> {
+    try {
+      const health = await this.client.getHealth();
+      const replayId = health.active_replay;
+      if (!replayId) return false;
+      const status = await this.client.getStatus(replayId);
+      this.cancelPendingRefresh();
+      this.dispatch({ type: "REPLAY_SET", replayId, status });
+      if (health.active_replay_starting) {
+        this.dispatch({ type: "START_REQUESTED" });
+      }
+      return true;
+    } catch (error) {
+      if (
+        error instanceof BackendConflictError &&
+        (error.status === 404 || error.code === "not_found")
+      ) {
+        return false;
+      }
+      if (reportFailure) this.reportError(error);
+      return false;
+    }
+  }
+
+  async handleEvent(envelope: EventEnvelopeV1) {
+    if (this.getState().replayId !== envelope.replay_id) return;
+    this.dispatch({ type: "EVENT", envelope });
+    const replayId = envelope.replay_id;
+
+    switch (envelope.event_type) {
+      case "REPLAY_CREATED":
+      case "REPLAY_STARTED":
+      case "REPLAY_RESUMED":
+        await this.refreshStatus(replayId);
+        return;
+      case "WINDOW_COMPLETED":
+        this.scheduleWindowRefresh(replayId);
+        return;
+      case "REPLAY_PAUSED":
+      case "REPLAY_STEPPED": {
+        const status = await this.refreshStatus(replayId);
+        if (status && status.windows_processed > 0) {
+          await this.refreshScientificState(replayId, status);
+        }
+        return;
+      }
+      case "DEVICE_STATE":
+        this.applyPayload(envelope, DeviceStateV1Schema, (payload) =>
+          this.dispatch({ type: "UPSERT_DEVICE_STATE", payload })
+        );
+        return;
+      case "DEVICE_RISK_GRAPH_SNAPSHOT":
+        this.applyPayload(envelope, DeviceRiskGraphSnapshotV1Schema, (payload) =>
+          this.dispatch({ type: "RISK_GRAPH", payload })
+        );
+        return;
+      case "COMMUNICATION_GRAPH_SNAPSHOT":
+        this.applyPayload(
+          envelope,
+          CommunicationGraphSnapshotV1Schema,
+          (payload) => this.dispatch({ type: "COMM_GRAPH", payload: payload as any })
+        );
+        return;
+      case "SREP_SNAPSHOT":
+        this.applyPayload(envelope, SrepSnapshotV1Schema, (payload) =>
+          this.dispatch({ type: "SREP", payload })
+        );
+        return;
+      case "REPLAY_COMPLETED":
+        await this.finalRefresh(replayId);
+        return;
+      case "REPLAY_FAILED":
+        await this.refreshStatus(replayId);
+        return;
+      default:
+        return;
+    }
+  }
+
+  handleGap(replayId: string) {
+    this.dispatch({ type: "EVENT_GAP" });
+    void this.hydrateReplay(replayId);
+  }
+
+  reportError(error: unknown) {
+    this.dispatch({
+      type: "ERROR",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  cancelPendingRefresh() {
+    this.trailingWindowReplayId = null;
+    if (this.pendingTimer !== null) {
+      this.scheduler.clearTimeout(this.pendingTimer);
+      this.pendingTimer = null;
+    }
+  }
+
+  dispose() {
+    this.cancelPendingRefresh();
+  }
+
+  private scheduleWindowRefresh(replayId: string) {
+    if (this.pendingTimer !== null) return;
+    if (this.windowRefresh !== null) {
+      this.trailingWindowReplayId = replayId;
+      return;
+    }
+    this.pendingTimer = this.scheduler.setTimeout(() => {
+      this.pendingTimer = null;
+      this.windowRefresh = this.refreshWindow(replayId).finally(() => {
+        this.windowRefresh = null;
+        const trailingReplayId = this.trailingWindowReplayId;
+        this.trailingWindowReplayId = null;
+        if (trailingReplayId && this.getState().replayId === trailingReplayId) {
+          this.scheduleWindowRefresh(trailingReplayId);
+        }
+      });
+    }, 300);
+  }
+
+  private async refreshWindow(replayId: string) {
+    const status = await this.refreshStatus(replayId);
+    if (status && status.windows_processed > 0) {
+      await this.refreshScientificState(replayId, status);
+    } else if (status) {
+      // Before first window, science not yet available is expected
+      await this.refreshScientificState(replayId, status);
+    }
+  }
+
+  private async finalRefresh(replayId: string) {
+    this.cancelPendingRefresh();
+    if (this.windowRefresh) await this.windowRefresh;
+    const status = await this.refreshStatus(replayId);
+    await this.refreshScientificState(replayId, status);
+  }
+
+  private applyPayload<T extends { replay_id: string }>(
+    envelope: EventEnvelopeV1,
+    schema: z.ZodType<T>,
+    apply: (payload: T) => void
+  ) {
+    const parsed = schema.safeParse(envelope.payload);
+    if (!parsed.success) {
+      this.dispatch({
+        type: "ERROR",
+        message: `Invalid ${envelope.event_type} payload: ${parsed.error.message}`,
+      });
+      return;
+    }
+    if (parsed.data.replay_id !== envelope.replay_id) {
+      this.dispatch({
+        type: "ERROR",
+        message: `${envelope.event_type} payload belongs to a different replay`,
+      });
+      return;
+    }
+    apply(parsed.data);
+  }
+
+  private isExpectedUnavailable(
+    error: unknown,
+    replayId: string,
+    status?: ReplayStatusV1 | null
+  ) {
+    const s = status !== undefined ? status : this.getState().status;
+    return (
+      error instanceof BackendConflictError &&
+      error.status === 409 &&
+      error.code === "no_scientific_state" &&
+      (!s || s.replay_id !== replayId || s.windows_processed === 0)
+    );
+  }
+}

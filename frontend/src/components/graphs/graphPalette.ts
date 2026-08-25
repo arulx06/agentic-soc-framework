@@ -1,0 +1,16 @@
+export const GRAPH_COLORS = {
+  background: "#070d19",
+  normal: "#4f8ff7",
+  lowRisk: "#38bdf8",
+  highRisk: "#f87171",
+  attacker: "#fb7185",
+  protected: "#fbbf24",
+  selected: "#e2f3ff",
+  neighbour: "#67e8f9",
+  documented: "rgba(125, 211, 252, 0.55)",
+  inferred: "rgba(148, 163, 184, 0.22)",
+  communication: "rgba(94, 234, 212, 0.45)",
+  communicationParticle: "rgba(45, 212, 191, 0.95)",
+  dimmed: "rgba(71, 85, 105, 0.07)",
+  text: "#dbeafe",
+} as const;
