@@ -21,6 +21,8 @@ python -m pytest -q
 python -m pytest tests/unit -q
 python -m pytest tests/integration -q
 python -m pytest tests/integration/backend/api -q
+python -m pytest tests/integration/backend/blackboard -q
+python -m pytest tests/unit/blackboard -q
 python -m pytest tests/regression -q
 python -m pytest tests/real_data -q
 
@@ -40,7 +42,9 @@ Current verified totals:
 |---|---:|
 | Python unit/integration/regression/real-data outside FastAPI | 178 |
 | Python FastAPI | 66 |
-| Python combined | 244 |
+| Blackboard core (Stage-4A, `tests/unit/blackboard`) | 134 |
+| Blackboard integration (Stage-4B, `tests/integration/backend/blackboard`) | 30 |
+| Python combined | 396 |
 | Frontend Vitest | 80 |
 
 ## Python Layout
@@ -56,12 +60,15 @@ tests/
 │   ├── features/                   feature semantics, masks, schemas
 │   ├── storage/                    feature store and bounded external sorting
 │   ├── modeling/                   profiler and split policy
-│   └── runtime/                    Findings, replay control, ABM, SREP
+│   ├── runtime/                    Findings, replay control, ABM, SREP
+│   └── blackboard/                 Stage-4A replicated core (quorum, hashing,
+│                                   versions, reads, persistence, hooks)
 ├── integration/
 │   ├── extraction/                 complete extraction paths and cleanup
 │   ├── cli/                        command-line training safeguards
 │   ├── runtime/                    per-window backend runtime behavior
-│   └── backend/api/                FastAPI contracts and replay lifecycle
+│   ├── backend/api/                FastAPI contracts and replay lifecycle
+│   └── backend/blackboard/         Stage-4B Gateway→Blackboard→API/events
 ├── regression/pipeline/            closure and scientific equivalence
 └── real_data/                       bounded local DataSense validation
 ```
@@ -118,6 +125,31 @@ only narrow dependency-warning filters.
 | `tests/unit/runtime/test_replay_control_boundaries.py` | Ensures cancellation is rechecked after a paused wake and fails immediately at cancelled checkpoints. |
 | `tests/unit/runtime/test_topology_abm_srep.py` | Covers topology provenance, communication separation, ABM propagation/bounds/history, blast radius, DEVICE_ONLY SREP, and trust-graph rejection. |
 
+### Blackboard Core (Stage 4A)
+
+Run with `python -m pytest tests/unit/blackboard -q`. These lock the
+corrected quorum semantics: `COMMITTED ⇒ ≥2 compatible ACK_COMMITTED`;
+exactly one durable commit is `PARTIAL_COMMIT`; a single responsive replica
+is `INSUFFICIENT_QUORUM` (never an authoritative record).
+
+| Module | Functionality |
+|---|---|
+| `test_contracts.py` | Record schema/registry, recursive ground-truth firewall, integrity binding, tamper detection. |
+| `test_hashing.py` | Canonical JSON determinism, order invariance, mutation sensitivity, hashed-field set. |
+| `test_replica_independence.py` | Three physical SQLite stores/locks, isolated state, exactly-three coordinator rule. |
+| `test_versioning.py` | Monotonic v1/v2/v3, stale rejection, ahead-of-head schema rejection, replica-layer conflicts, lease takeover. |
+| `test_quorum_lifecycle.py` | Quorum combinator (3/2/1/0/splits), prepare→commit lifecycle, abort-on-failure, equivocation-seam isolation. |
+| `test_commit_quorum.py` | Commit-phase durability matrix (3/2/1/0 commits), restart after partial commit, COMMITTED⇒committed-quorum invariant battery. |
+| `test_partial_commit_repair.py` | Divergence marking after missed commits, explicit head-aligned repair, no-majorsource refusal, authorization on repair. |
+| `test_reads.py` | CONSISTENT / DEGRADED / NOT_FOUND / INSUFFICIENT_QUORUM / INCONSISTENT / UNAVAILABLE matrix, version reads, pending invisibility. |
+| `test_persistence_restart.py` | Restart survival of committed state; pending/aborted never become committed; failed-quorum cleanliness. |
+| `test_authorization.py` | Allow-all dev default vs deny-closed principal policy; denials change no state. |
+| `test_fault_hooks.py` | Identity/pass-through default seams, hook-driven unavailability → UNAVAILABLE acks, no mutation vocabulary in production surface. |
+| `test_concurrency.py` | Same-key thread races have one winner; optimistic retry converges without gaps; duelling coordinators. |
+| `test_bounded_history.py` | Capped operation/rejection/latency rings, counter accuracy, settings validation. |
+| `test_bounded_scan.py` | Explicit truncation/completeness flags for merged committed views under tiny configurable scan bounds. |
+| `test_listener_isolation.py` | Phase-listener/publisher failures cannot alter outcomes, quorum, PARTIAL_COMMIT or persistence; failures counted. |
+
 ## Integration Test Catalog
 
 | Module | Functionality |
@@ -142,6 +174,16 @@ only narrow dependency-warning filters.
 | `tests/integration/backend/api/test_replay_controller.py` | Covers lifecycle transitions, one-active policy, controls, pacing, early totals, incremental progress, restart namespaces, construction cancellation, repeated restarts, and errors. |
 | `tests/integration/backend/api/test_scientific_non_interference.py` | Proves event instrumentation does not alter scientific projections or observation-mask finding counts. |
 | `tests/integration/backend/api/test_snapshot_event_boundary.py` | Verifies final event ordering and that temporary snapshot persistence emits no replay events. |
+
+### Blackboard Integration (Stage 4B)
+
+Run with `python -m pytest tests/integration/backend/blackboard -q`.
+
+| Module | Functionality |
+|---|---|
+| `test_blackboard_api.py` | Health/records/versions/replicas/snapshot endpoints, pagination + filters, truncated-vs-complete view flags, authorization before prepare, masquerade restriction, persistence through backend reconstruction. |
+| `test_blackboard_events.py` | Real PROPOSED→3 ACKs→COMMITTED chronology in one sequence namespace; stale/conflict/quorum-failure/partial event fidelity (PARTIAL never emits WRITE_COMMITTED); read/inconsistent-read events; disabled-integration 503. |
+| `test_blackboard_pipeline_integration.py` | Mandatory scientific non-interference on the bounded feature-store session, Gateway rejection isolation, no-double-processing control, leakage scans over events/snapshot/rejections, documented chronology policy, observation-semantics preservation (`behavior_supported=False ⇒ behavior_risk=None`), direct/store record equivalence after excluding operational provenance. |
 
 ## Regression And Real-Data Catalog
 

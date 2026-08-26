@@ -21,6 +21,7 @@ from backend.app.api.v1.router import api_v1_router  # noqa: E402
 from backend.app.config import API_VERSION, CORS_ALLOW_ORIGINS  # noqa: E402
 from backend.app.contracts.common import ApiErrorV1  # noqa: E402
 from backend.app.services.replay_controller import ControllerError, ReplayController  # noqa: E402
+from backend.app.services.blackboard_service import BlackboardService  # noqa: E402
 from backend.app.services.snapshot_store import SnapshotStore  # noqa: E402
 
 @asynccontextmanager
@@ -50,10 +51,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-controller = ReplayController()
+# Stage-4B: Blackboard integration is enabled by default and constructs its
+# three-replica coordinator LAZILY (first use), so importing this module or
+# serving non-Blackboard endpoints never creates persistence files. Root is
+# overridable for isolated deployments/tests via DATASENSE_BLACKBOARD_ROOT.
+import os as _os  # noqa: E402
+
+_bb_root = _os.environ.get("DATASENSE_BLACKBOARD_ROOT")
+blackboard_service = BlackboardService(
+    root=Path(_bb_root) if _bb_root else None,
+    enabled=_os.environ.get("DATASENSE_BLACKBOARD", "1") == "1",
+)
+
+controller = ReplayController(blackboard=blackboard_service)
 snapshot_store = SnapshotStore()
 app.state.controller = controller
 app.state.snapshot_store = snapshot_store
+app.state.blackboard = blackboard_service
 
 
 @app.exception_handler(ControllerError)

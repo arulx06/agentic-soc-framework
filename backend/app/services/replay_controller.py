@@ -22,6 +22,7 @@ from backend.app.adapters.stage2_replay_adapter import (
     srep_contract,
 )
 from backend.app.config import (
+    BLACKBOARD_OPS_RUN_ID,
     CLOCK_TOLERANCE_MS_DEFAULT,
     EVENT_RING_BUFFER_SIZE,
     FEATURE_STORE_ROOT,
@@ -98,14 +99,75 @@ class ReplayController:
         ring_size: int = EVENT_RING_BUFFER_SIZE,
         subscriber_queue_size: int = SUBSCRIBER_QUEUE_SIZE,
         sleeper=None,
+        blackboard=None,
     ):
         self.broker = broker or EventBroker(ring_size, subscriber_queue_size)
         self.catalog = catalog or SessionCatalog()
         self.sleeper = sleeper
+        # Optional Stage-4B Blackboard integration (None => fully disabled;
+        # scientific behaviour is identical either way).
+        self.blackboard = blackboard
+        if self.blackboard is not None:
+            self.blackboard.publisher = self._publish_blackboard_event
+        self._ops_sequence = 0
         self._lock = threading.RLock()
         self._lifecycle_lock = threading.RLock()
         self._runs: dict[str, _Run] = {}
         self._active_id: str | None = None
+
+    # --------------------------------------------------- blackboard events
+    def _publish_blackboard_event(
+        self,
+        event_type: ReplayEventType,
+        payload: dict,
+        *,
+        replay_id: str | None = None,
+        window_id: int | None = None,
+        logical_timestamp: str | None = None,
+        entity_id: str | None = None,
+    ) -> None:
+        """Route BLACKBOARD_* events into the SAME chronological stream.
+
+        During a scientific replay the event joins that run's sequence
+        namespace; outside any run it uses the bounded operational
+        namespace ``blackboard-ops`` (own monotonic sequence).
+        """
+        run = self._runs.get(replay_id) if replay_id is not None else None
+        if run is not None:
+            self._publish(
+                run,
+                event_type,
+                payload=payload,
+                window_id=window_id,
+                logical_timestamp=logical_timestamp,
+                entity_id=entity_id,
+                source_component="backend.app.services.blackboard_service",
+            )
+            return
+        with self._lock:
+            seq = self._ops_sequence
+            self._ops_sequence += 1
+            envelope = EventEnvelopeV1(
+                replay_id=BLACKBOARD_OPS_RUN_ID,
+                event_id=f"{BLACKBOARD_OPS_RUN_ID}-{seq}",
+                sequence_number=seq,
+                event_type=event_type,
+                logical_timestamp=logical_timestamp,
+                window_id=window_id,
+                entity_id=entity_id,
+                source_component="backend.app.services.blackboard_service",
+                payload=payload,
+                provenance={"namespace": "blackboard-operational"},
+            )
+            self.broker.publish(envelope)
+
+    def _blackboard_on_finding(self, run: _Run, finding) -> None:
+        """Gateway observer: accepted findings only. Failures here must
+        never propagate into the scientific path."""
+        try:
+            self.blackboard.record_finding(finding, replay_id=run.replay_id)
+        except Exception:
+            self.blackboard.integration_errors += 1
 
     # ------------------------------------------------------------- helpers
     def _publish(self, run: _Run, event_type: ReplayEventType, **data) -> EventEnvelopeV1:
@@ -180,6 +242,20 @@ class ReplayController:
             payload=srep.model_dump(),
             source_component="backend.app.adapters.stage2_replay_adapter",
         )
+        # Stage-4B: bounded Blackboard record policy — one DEVICE_STATE
+        # record per entity and one SREP record per completed replay
+        # (never per-window graph duplication).
+        if self.blackboard is not None and self.blackboard.enabled:
+            try:
+                for st in device_state_contracts(rt, run.replay_id):
+                    self.blackboard.record_device_state(
+                        replay_id=run.replay_id, state_contract=st
+                    )
+                self.blackboard.record_srep_snapshot(
+                    replay_id=run.replay_id, srep_contract=srep
+                )
+            except Exception:
+                self.blackboard.integration_errors += 1
 
     def _require(self, replay_id: str) -> _Run:
         run = self._runs.get(replay_id)
@@ -287,6 +363,15 @@ class ReplayController:
                 pacing_speed=run.pacing.value,
                 start_paused=start_paused,
                 sleeper=self.sleeper,
+                finding_observers=(
+                    (
+                        lambda finding, _run=run: self._blackboard_on_finding(
+                            _run, finding
+                        )
+                    ),
+                )
+                if self.blackboard is not None and self.blackboard.enabled
+                else (),
             )
             with self._lock:
                 if run.cancel_requested:
@@ -557,3 +642,8 @@ class ReplayController:
             run = self._runs.get(rid)
             if run is not None and run.thread is not None:
                 run.thread.join(timeout=5)
+        if self.blackboard is not None:
+            try:
+                self.blackboard.close()
+            except Exception:
+                pass

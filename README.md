@@ -107,6 +107,25 @@ React client uses replay-scoped events for timely synchronization.
 
 See `docs/stage3a_fastapi_backend.md`.
 
+## Blackboard Backend (Stage 4)
+
+The backend carries a quorum-replicated Blackboard coordination substrate
+(three independent SQLite replicas, two-of-three compatible commit policy,
+authenticated/fail-stop assumptions — NOT Byzantine fault tolerance). During
+replays it records accepted Network/Behavior findings from the Finding
+Gateway plus one device-state and one SREP record per completed run; all
+BLACKBOARD_* events flow through the same replay WebSocket chronology.
+
+- Persistence: initialized lazily at first use under `runtime/blackboard/`
+  (`replica_{a,b,c}.db`, gitignored). Override with `DATASENSE_BLACKBOARD_ROOT`;
+  disable with `DATASENSE_BLACKBOARD=0`.
+- API: `/api/v1/blackboard/{health,records,replicas,snapshot}` — record reads
+  preserve full consistency semantics (`INSUFFICIENT_QUORUM`/`INCONSISTENT`
+  never return a record as authoritative); listing is paginated.
+- Tests: `python -m pytest tests/unit/blackboard tests/integration/backend/blackboard -q`
+
+See `docs/stage4a_blackboard_core.md` and `docs/stage4b_blackboard_integration.md`.
+
 ## React Dashboard
 
 ```bash
