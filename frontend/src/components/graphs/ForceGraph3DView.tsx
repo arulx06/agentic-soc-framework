@@ -10,11 +10,8 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
-  OctahedronGeometry,
-  SphereGeometry,
   Sprite,
   SpriteMaterial,
-  TorusGeometry,
 } from "three";
 import { useElementSize } from "../../hooks/useElementSize";
 import { GRAPH_COLORS } from "./graphPalette";
@@ -25,6 +22,20 @@ import type {
   PresentationLink,
   PresentationNode,
 } from "./graphModel";
+import {
+  applyAccentDimming,
+  applyNodeVisualState,
+} from "./models/modelMaterials";
+import type { ModelBounds, NodeModelKind } from "./models/modelTypes";
+import {
+  LABEL_MARGIN,
+  MIN_LABEL_HEIGHT,
+  createHaloMesh,
+  disposeObjectTree,
+  geo,
+} from "./models/modelUtils";
+import { createNodeModel } from "./models/NodeModelFactory";
+import { resolveNodeModelKind } from "./models/nodeModelRegistry";
 
 interface Props {
   data: PresentationGraphData;
@@ -44,11 +55,17 @@ interface Props {
 }
 
 interface NodeVisual {
+  id: string;
+  kind: NodeModelKind;
   group: Group;
-  core: Mesh;
-  coreMaterial: MeshBasicMaterial;
+  content: Group;
+  stateMaterials: MeshBasicMaterial[];
+  accentMaterials: MeshBasicMaterial[];
+  bounds: ModelBounds;
   halo?: Mesh;
   haloMaterial?: MeshBasicMaterial;
+  hitbox?: Mesh;
+  hitboxMaterial?: MeshBasicMaterial;
   label: Sprite;
   labelMaterial: SpriteMaterial;
   labelTexture?: CanvasTexture;
@@ -335,40 +352,57 @@ export function ForceGraph3DView({
 }
 
 function createVisual(node: PresentationNode): NodeVisual {
+  const kind = resolveNodeModelKind(
+    node.id,
+    node.risk
+      ? {
+          deviceType: node.risk.device_type,
+          role: node.risk.role,
+          isAttacker: node.risk.is_attacker,
+        }
+      : undefined
+  );
+  const built = createNodeModel(kind);
   const group = new Group();
-  const coreMaterial = new MeshBasicMaterial({
-    color: GRAPH_COLORS.normal,
+
+  const hitboxMaterial = new MeshBasicMaterial({
+    colorWrite: false,
+    depthWrite: false,
     transparent: true,
+    opacity: 0,
   });
-  const geometry = node.risk?.is_attacker
-    ? new OctahedronGeometry(1.25, 0)
-    : new SphereGeometry(1, 18, 14);
-  const core = new Mesh(geometry, coreMaterial);
-  group.add(core);
+  const hitbox = new Mesh(
+    geo.sphere(built.bounds.radius, 12, 8),
+    hitboxMaterial
+  );
+  built.content.add(hitbox);
+
+  group.add(built.content);
 
   let halo: Mesh | undefined;
   let haloMaterial: MeshBasicMaterial | undefined;
   if (node.risk?.is_protected_asset) {
-    haloMaterial = new MeshBasicMaterial({
-      color: GRAPH_COLORS.protected,
-      transparent: true,
-      opacity: 0.7,
-    });
-    halo = new Mesh(new TorusGeometry(1.75, 0.08, 8, 28), haloMaterial);
-    halo.rotation.x = Math.PI / 2;
+    const haloResult = createHaloMesh(GRAPH_COLORS.protected, built.bounds.radius);
+    halo = haloResult.mesh;
+    haloMaterial = haloResult.material;
     group.add(halo);
   }
 
   const { sprite: label, material: labelMaterial, texture: labelTexture } =
     createLabel(node.id);
-  label.position.set(0, 3.2, 0);
   group.add(label);
   return {
+    id: node.id,
+    kind,
     group,
-    core,
-    coreMaterial,
+    content: built.content,
+    stateMaterials: built.stateMaterials,
+    accentMaterials: built.accentMaterials,
+    bounds: built.bounds,
     halo,
     haloMaterial,
+    hitbox,
+    hitboxMaterial,
     label,
     labelMaterial,
     labelTexture,
@@ -392,13 +426,20 @@ function updateVisual(
       : node.risk?.is_attacker
         ? GRAPH_COLORS.attacker
         : riskColor(node.risk?.systemic_risk ?? node.risk?.network_risk ?? null);
-  visual.coreMaterial.color.set(color);
-  visual.coreMaterial.opacity = dimmed ? 0.16 : 0.96;
-  if (visual.haloMaterial) visual.haloMaterial.opacity = dimmed ? 0.1 : 0.72;
+  applyNodeVisualState(visual.stateMaterials, { color, dimmed });
+  applyAccentDimming(visual.accentMaterials, dimmed);
   const risk = node.risk?.systemic_risk ?? node.risk?.network_risk ?? 0;
   const scale = (node.risk?.is_attacker ? 6.2 : 5.5) + Math.max(0, risk) * 3.5;
-  visual.core.scale.setScalar(scale);
-  visual.halo?.scale.setScalar(scale / 1.5);
+  visual.content.scale.setScalar(scale);
+  if (visual.halo && visual.haloMaterial) {
+    visual.halo.scale.setScalar(scale);
+    visual.haloMaterial.opacity = dimmed ? 0.1 : 0.72;
+  }
+  visual.label.position.set(
+    0,
+    Math.max((visual.bounds.top + LABEL_MARGIN) * scale, MIN_LABEL_HEIGHT),
+    0
+  );
   visual.label.visible =
     labelMode === "all" || (labelMode === "selected" && selected);
   visual.labelMaterial.opacity = dimmed ? 0.15 : 0.95;
@@ -426,13 +467,7 @@ function createLabel(text: string) {
 }
 
 function disposeVisual(visual: NodeVisual) {
-  visual.core.geometry.dispose();
-  visual.coreMaterial.dispose();
-  visual.halo?.geometry.dispose();
-  visual.haloMaterial?.dispose();
-  visual.labelTexture?.dispose();
-  visual.labelMaterial.dispose();
-  visual.group.clear();
+  disposeObjectTree(visual.group);
 }
 
 function linkColor(
