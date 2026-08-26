@@ -1,4 +1,4 @@
-import { MeshBasicMaterial } from "three";
+import { MeshBasicMaterial, MeshPhongMaterial, MeshStandardMaterial } from "three";
 import type { Material, MeshBasicMaterial as MeshBasicMaterialType } from "three";
 
 export const MODEL_COLORS = {
@@ -21,6 +21,7 @@ export const MODEL_COLORS = {
   pcb: "#166534",
   obsidian: "#111827",
   ember: "#f43f5e",
+  rubber: "#10161f",
 } as const;
 
 export const STATE_OPACITY = 0.96;
@@ -42,6 +43,45 @@ export function createStateMaterial(color: string): MeshBasicMaterialType {
 
 export function isStateMaterial(material: Material): boolean {
   return material.userData?.stateRole === true;
+}
+
+export function createMetalMaterial(
+  color: string,
+  roughness = 0.35
+): MeshStandardMaterial {
+  return new MeshStandardMaterial({
+    color,
+    metalness: 0.85,
+    roughness,
+    transparent: true,
+  });
+}
+
+export function createGlassMaterial(color = "#0a1626"): MeshPhongMaterial {
+  return new MeshPhongMaterial({
+    color,
+    shininess: 120,
+    specular: "#9fc7e8",
+    transparent: true,
+  });
+}
+
+export function createGlossMaterial(color: string): MeshPhongMaterial {
+  return new MeshPhongMaterial({
+    color,
+    shininess: 55,
+    specular: "#2a3a4a",
+    transparent: true,
+  });
+}
+
+export function createRubberMaterial(): MeshStandardMaterial {
+  return new MeshStandardMaterial({
+    color: MODEL_COLORS.rubber,
+    metalness: 0.05,
+    roughness: 0.95,
+    transparent: true,
+  });
 }
 
 export interface StateVisualInput {

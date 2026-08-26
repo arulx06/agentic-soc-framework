@@ -16,6 +16,7 @@ import {
   TorusGeometry,
   Vector3,
 } from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import type { BufferGeometry, Material } from "three";
 import { isStateMaterial } from "./modelMaterials";
 import type { ModelBounds, ModelBuildContext } from "./modelTypes";
@@ -41,6 +42,11 @@ export const geo = {
     cached(`sphere(${r},${ws},${hs})`, () => new SphereGeometry(r, ws, hs)),
   box: (w: number, h: number, d: number) =>
     cached(`box(${w},${h},${d})`, () => new BoxGeometry(w, h, d)),
+  roundedBox: (w: number, h: number, d: number, radius = 0.05, seg = 2) =>
+    cached(
+      `rbox(${w},${h},${d},${radius},${seg})`,
+      () => new RoundedBoxGeometry(w, h, d, seg, radius)
+    ),
   cylinder: (rt = 0.5, rb = 0.5, h = 1, s = 16) =>
     cached(`cyl(${rt},${rb},${h},${s})`, () => new CylinderGeometry(rt, rb, h, s)),
   cone: (r = 0.5, h = 1, s = 16) =>

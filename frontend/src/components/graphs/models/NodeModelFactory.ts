@@ -2,7 +2,9 @@ import { Group } from "three";
 import type { Mesh, MeshBasicMaterial } from "three";
 import {
   MODEL_COLORS,
+  createGlossMaterial,
   createOwnedMaterial,
+  createRubberMaterial,
   createStateMaterial,
 } from "./modelMaterials";
 import type {
@@ -70,12 +72,18 @@ import {
 } from "./AttackerModels";
 
 const buildGenericDeviceModel: ModelBuilder = (ctx) => {
-  addModelPart(ctx, geo.box(0.85, 0.5, 0.62), createStateMaterial(MODEL_COLORS.bodyMid), {
-    position: [0, -0.05, 0],
-  });
-  addModelPart(ctx, geo.box(0.73, 0.05, 0.5), createStateMaterial(MODEL_COLORS.bodyLight), {
-    position: [0, 0.22, 0],
-  });
+  addModelPart(
+    ctx,
+    geo.roundedBox(0.85, 0.5, 0.62, 0.06),
+    createStateMaterial(MODEL_COLORS.bodyMid),
+    { position: [0, -0.05, 0] }
+  );
+  addModelPart(
+    ctx,
+    geo.roundedBox(0.73, 0.05, 0.5, 0.02),
+    createGlossMaterial(MODEL_COLORS.bodyLight),
+    { position: [0, 0.22, 0] }
+  );
   addModelPart(ctx, geo.box(0.4, 0.03, 0.03), createOwnedMaterial(MODEL_COLORS.obsidian), {
     position: [-0.1, -0.1, 0.33],
   });
@@ -85,8 +93,8 @@ const buildGenericDeviceModel: ModelBuilder = (ctx) => {
   for (const x of [-0.3, 0.3]) {
     addModelPart(
       ctx,
-      geo.box(0.14, 0.06, 0.14),
-      createOwnedMaterial(MODEL_COLORS.bodyDark),
+      geo.roundedBox(0.14, 0.06, 0.14, 0.02),
+      createRubberMaterial(),
       { position: [x, -0.34, 0] }
     );
   }

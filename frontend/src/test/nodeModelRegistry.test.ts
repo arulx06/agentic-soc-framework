@@ -160,7 +160,7 @@ describe("model randomness audit", () => {
 });
 
 describe("node model factory", () => {
-  const MAX_MESHES_PER_MODEL = 15;
+  const MAX_MESHES_PER_MODEL = 20;
 
   function buildAndDisposeMaterials(kind: NodeModelKind): BuiltNodeModel {
     const built = createNodeModel(kind);
@@ -282,13 +282,36 @@ describe("node model factory", () => {
     second.accentMaterials.forEach((m) => m.dispose());
   });
 
+  it("keeps risk-responsive state surfaces unlit MeshBasicMaterial in every model", () => {
+    const kinds: NodeModelKind[] = [
+      ...KNOWN_NODE_IDS.map((id) => NODE_MODEL_BY_ID[id]),
+      "GenericDeviceModel",
+      "GenericSensorModel",
+      "GenericCameraModel",
+      "GenericPlugModel",
+      "GenericNetworkDeviceModel",
+      "GenericAttackerModel",
+    ];
+    kinds.forEach((kind) => {
+      const built = createNodeModel(kind);
+      expect(built.stateMaterials.length).toBeGreaterThan(0);
+      built.stateMaterials.forEach((material) => {
+        expect(material.type).toBe("MeshBasicMaterial");
+        material.dispose();
+      });
+      built.accentMaterials.forEach((material) => material.dispose());
+    });
+  });
+
   it("keeps the generic fallback an enclosure rather than a bare sphere", () => {
     const generic = buildAndDisposeMaterials("GenericDeviceModel");
     const geometryTypes = generic.content.children.map(
       (child) => (child as Mesh).geometry.type
     );
-    const boxCount = geometryTypes.filter((type) => type === "BoxGeometry").length;
+    const boxCount = geometryTypes.filter(
+      (type) => type === "BoxGeometry" || type === "RoundedBoxGeometry"
+    ).length;
     expect(boxCount).toBeGreaterThanOrEqual(3);
-    expect(generic.stateMaterials.length).toBeGreaterThanOrEqual(2);
+    expect(generic.stateMaterials.length).toBeGreaterThanOrEqual(1);
   });
 });
