@@ -16,6 +16,10 @@ CONTRACT_VERSIONS = {
     "graph_snapshot": "graph_snapshot_v1",
     "srep_snapshot": "srep_snapshot_v1",
     "saved_replay_snapshot": "saved_replay_snapshot_v1",
+    "orchestration_request": "orchestration_request_v1",
+    "orchestrator_proposal": "orchestrator_proposal_v1",
+    "orchestrator_vote": "orchestrator_vote_v1",
+    "orchestration_decision": "orchestration_decision_v1",
 }
 
 FEATURE_STORE_ROOT = REPO_ROOT / "data" / "processed" / "datasense"
@@ -40,6 +44,13 @@ BLACKBOARD_RECORDS_MAX_LIMIT = 200
 BLACKBOARD_SNAPSHOT_RECENT_LIMIT = 100
 BLACKBOARD_SNAPSHOT_MAX_KEYS = 500
 BLACKBOARD_DEV_WRITE_PAYLOAD_MAX_BYTES = 65_536
+
+# Stage-6 orchestration operational integration (not a scientific replay)
+ORCHESTRATION_OPS_RUN_ID = "orchestration-ops"
+ORCHESTRATION_DECISIONS_DEFAULT_LIMIT = 50
+ORCHESTRATION_DECISIONS_MAX_LIMIT = 200
+ORCHESTRATION_DECISION_HISTORY_LIMIT = 256
+ORCHESTRATION_DEFAULT_TIMEOUT_SECONDS = 0.25
 
 WINDOW_SECONDS_DEFAULT = 5.0
 CLOCK_TOLERANCE_MS_DEFAULT = 10.0

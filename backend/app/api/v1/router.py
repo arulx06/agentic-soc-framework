@@ -7,6 +7,7 @@ from backend.app.api.v1.endpoints import (
     events,
     graphs,
     health,
+    orchestration,
     replays,
     sessions,
     snapshots,
@@ -22,3 +23,4 @@ api_v1_router.include_router(srep.router, tags=["srep"])
 api_v1_router.include_router(snapshots.router, tags=["snapshots"])
 api_v1_router.include_router(events.router, tags=["events"])
 api_v1_router.include_router(blackboard.router, tags=["blackboard"])
+api_v1_router.include_router(orchestration.router, tags=["orchestration"])

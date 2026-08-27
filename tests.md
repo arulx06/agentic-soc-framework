@@ -36,7 +36,8 @@ npm test
 npm run build
 ```
 
-Current verified totals (2026-08-27, Stage-5 `feat/blackboard-ui`):
+Current verified totals are recorded after the Stage-6 verification commands
+below. Historical Stage-5 results remain in their dedicated section.
 
 | Suite | Tests |
 |---|---:|
@@ -44,10 +45,12 @@ Current verified totals (2026-08-27, Stage-5 `feat/blackboard-ui`):
 | Python FastAPI | 66 |
 | Blackboard core (Stage-4A, `tests/unit/blackboard`) | 134 |
 | Blackboard integration (Stage-4B, `tests/integration/backend/blackboard`) | 30 |
-| Python combined (`python -m pytest tests -q`) | 408 |
+| Orchestration core (Stage 6, `tests/unit/orchestration`) | 63 |
+| Orchestration backend/API/events (Stage 6, `tests/integration/backend/orchestration`) | 11 |
+| Python combined (`python -m pytest tests -q`) | 482 |
 | Frontend Vitest — Stage-3 (prior) | 96 |
 | Frontend Vitest — Stage-5 Blackboard (new) | 64 |
-| Frontend Vitest combined (`cd frontend && npm test`) | 160 |
+| Frontend Vitest combined (`cd frontend && npm test`) | 161 |
 | Frontend type-check (`npm run type-check`) | 0 errors |
 | Frontend production build (`npm run build`) | ✓ |
 
@@ -69,12 +72,15 @@ tests/
 │   ├── runtime/                    Findings, replay control, ABM, SREP
 │   └── blackboard/                 Stage-4A replicated core (quorum, hashing,
 │                                   versions, reads, persistence, hooks)
+│   └── orchestration/              Stage-6 contracts, HMAC, replicas, quorum,
+│                                   deadlines, concurrency, bounds
 ├── integration/
 │   ├── extraction/                 complete extraction paths and cleanup
 │   ├── cli/                        command-line training safeguards
 │   ├── runtime/                    per-window backend runtime behavior
 │   ├── backend/api/                FastAPI contracts and replay lifecycle
 │   └── backend/blackboard/         Stage-4B Gateway→Blackboard→API/events
+│   └── backend/orchestration/      Stage-6 REST/events/WebSocket integration
 ├── regression/pipeline/            closure and scientific equivalence
 └── real_data/                       bounded local DataSense validation
 ```
@@ -156,6 +162,21 @@ is `INSUFFICIENT_QUORUM` (never an authoritative record).
 | `test_bounded_scan.py` | Explicit truncation/completeness flags for merged committed views under tiny configurable scan bounds. |
 | `test_listener_isolation.py` | Phase-listener/publisher failures cannot alter outcomes, quorum, PARTIAL_COMMIT or persistence; failures counted. |
 
+### Orchestration Core (Stage 6)
+
+Run with `python -m pytest tests/unit/orchestration -q -ra`.
+
+| Module | Functionality |
+|---|---|
+| `test_contracts_hashing_firewall.py` | Versioned typed requests, candidate normalization, mutation sensitivity, JSON/finite-value bounds, and strict nested forbidden-key rejection. |
+| `test_authentication_and_digests.py` | Semantic proposal digest equality across senders, sender-specific message hashes, HMAC key/sender/route/digest/round tamper rejection, and secret-safe repr. |
+| `test_replica_independence.py` | Exact independent orchestrator identities/state and separation from Blackboard replicas and trust concepts. |
+| `test_quorum_timeouts.py` | 3-0, 2-1, unavailable, three-way split/no fallback, timeout, fast-two/slow-one delay, omission, and vote-phase timeout evidence. |
+| `test_message_validation.py` | Duplicate idempotence, conflicting vote evidence, forged proposal/vote authentication, wrong round, unknown route, and terminal late-message rejection. |
+| `test_concurrency.py` | One final decision under concurrent duplicate calls and digest conflict rejection for reused round identity. |
+| `test_event_observation_order.py` | Concurrent completion order is preserved rather than fabricated as A/B/C order. |
+| `test_instrumentation_bounds.py` | Replay cache, round/decision/replica/rejection histories, latency, and instrumentation bounds. |
+
 ## Integration Test Catalog
 
 | Module | Functionality |
@@ -191,6 +212,15 @@ Run with `python -m pytest tests/integration/backend/blackboard -q`.
 | `test_blackboard_events.py` | Real PROPOSED→3 ACKs→COMMITTED chronology in one sequence namespace; stale/conflict/quorum-failure/partial event fidelity (PARTIAL never emits WRITE_COMMITTED); read/inconsistent-read events; disabled-integration 503. |
 | `test_blackboard_pipeline_integration.py` | Mandatory scientific non-interference on the bounded feature-store session, Gateway rejection isolation, no-double-processing control, leakage scans over events/snapshot/rejections, documented chronology policy, observation-semantics preservation (`behavior_supported=False ⇒ behavior_risk=None`), direct/store record equivalence after excluding operational provenance. |
 
+### Orchestration Integration (Stage 6)
+
+Run with `python -m pytest tests/integration/backend/orchestration -q -ra`.
+
+| Module | Functionality |
+|---|---|
+| `test_api.py` | Versioned POST decision, audit-principal wording, pre-mutation principal rejection, strict version/leakage rejection, replica health/detail, bounded filtering/pagination, incomplete-history disclosure, and API errors. |
+| `test_events_websocket.py` | Existing EventEnvelope/EventBroker reuse, causal chronology, strict sequence, real `orchestration-ops` WebSocket subscription without fake replay, scientific sequence isolation, and no key exposure. |
+
 ## Regression And Real-Data Catalog
 
 | Module | Functionality |
@@ -212,7 +242,7 @@ Frontend tests live under `frontend/src/test` and run with Vitest/jsdom.
 | `graphModel.test.ts` | Validates graph conversion, topology identity, coordinates, filtering, and presentation metadata. |
 | `nodeModelRegistry.test.ts` | Validates 3D node model registry and material contracts (Stage-3D). |
 | `replayControlsHybrid.test.tsx` | Enforces lifecycle control availability, startup guards, terminal Create, pacing rules, and restart overrides. |
-| `replaySocket.test.ts` | Rejects foreign replay envelopes before sequence and terminal tracking. |
+| `replaySocket.test.ts` | Rejects foreign replay envelopes before sequence tracking and accepts Stage-6 transport events without classifying them as Blackboard. |
 | `replaySync.test.ts` | Covers bounded event history, gaps, namespace reset, startup lifecycle, and stale terminal-state rejection. |
 | `replaySynchronizer.test.ts` | Covers REST authority, active replay recovery, Create conflicts, startup races, coalescing, terminal convergence, and stale-request protection. |
 | `stage3b.test.tsx` | Exercises REST control contracts and core Stage 3B component behavior. |
@@ -239,6 +269,41 @@ npm run build                                      → ✓ 473 modules, build su
 ```
 
 Micro-closure fixes: BlackboardView refresh now keyed to newest relevant `sequence_number` + `event_id` (not `length`), `eventsVersion` removed; vacuous `toBeGreaterThanOrEqual(0)` snapshot test replaced with `findByTestId("snapshot-truncated-warning")` + content; WebSocket disconnect/reconnect/gap tests now exercise real `BlackboardView` + `ReplayContext`/`replayReducer` `EVENT_GAP`; added bounded-refresh regression (same-length replacement).
+
+### Stage-6 verification outputs (2026-08-28)
+
+```text
+# Focused Stage 6
+python -m pytest tests/unit/orchestration -q -ra
+  -> 63 passed
+python -m pytest tests/integration/backend/orchestration -q -ra
+  -> 11 passed
+
+# Stage-4 and Stage-3 regressions
+python -m pytest tests/unit/blackboard -q -ra
+  -> 134 passed
+python -m pytest tests/integration/backend/blackboard -q -ra
+  -> 30 passed
+python -m pytest tests/integration/backend/api -q -ra
+  -> 66 passed
+
+# Full backend
+python -m pytest tests -q -ra
+  -> 482 passed in 169.33s
+
+# Frontend transport compatibility and unchanged UI
+cd frontend
+npm test
+  -> 11 files, 161 passed
+npm run type-check
+  -> 0 errors
+npm run build
+  -> 473 modules transformed, build succeeded
+```
+
+The Stage-6 tests contain no vacuous `or True`, empty `any(...)`, or
+non-enforcing non-negative-count assertions. The frontend adds no Stage-7
+orchestration view; it only accepts the shared orchestration event values.
 
 ## Data And Artifact Prerequisites
 

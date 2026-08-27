@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReplaySocket } from "../api/replaySocket";
+import { BLACKBOARD_EVENT_TYPES, isEventEnvelope } from "../api/contracts";
 import { makeEnvelope } from "./fixtures";
 
 class FakeWebSocket {
@@ -65,6 +66,28 @@ describe("ReplaySocket replay namespace", () => {
 
     expect(onOpen).toHaveBeenCalledOnce();
     expect(events).toEqual([0]);
+    socket.close();
+  });
+
+  it("accepts Stage-6 transport events without classifying them as Blackboard", () => {
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    const onEvent = vi.fn();
+    const socket = new ReplaySocket("ws://test", "orchestration-ops", {
+      onEvent,
+      onGap: vi.fn(),
+    });
+    socket.connect();
+    const ws = FakeWebSocket.instance!;
+    ws.open();
+    const envelope = makeEnvelope("ORCHESTRATION_DECISION", {
+      replay_id: "orchestration-ops",
+      sequence_number: 0,
+    });
+    ws.message(envelope);
+
+    expect(isEventEnvelope(envelope)?.event_type).toBe("ORCHESTRATION_DECISION");
+    expect(onEvent).toHaveBeenCalledOnce();
+    expect(BLACKBOARD_EVENT_TYPES.has("ORCHESTRATION_DECISION")).toBe(false);
     socket.close();
   });
 });

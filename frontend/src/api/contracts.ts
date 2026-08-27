@@ -458,7 +458,7 @@ export const DevWriteResponseV1Schema = z.object({
 });
 export type DevWriteResponseV1 = z.infer<typeof DevWriteResponseV1Schema>;
 
-// ─── Event envelope (30-value enum: 17 Stage-3 + 13 Stage-4B Blackboard) ───────
+// Transport registry only; Stage-6 UI is intentionally not implemented.
 export const EVENT_TYPE_VALUES = [
   "REPLAY_CREATED",
   "REPLAY_STARTED",
@@ -490,6 +490,16 @@ export const EVENT_TYPE_VALUES = [
   "BLACKBOARD_READ",
   "BLACKBOARD_READ_INCONSISTENT",
   "BLACKBOARD_REPLICA_STATUS",
+  "ORCHESTRATION_REQUEST_RECEIVED",
+  "ORCHESTRATOR_PROPOSAL",
+  "ORCHESTRATOR_VOTE",
+  "ORCHESTRATOR_TIMEOUT",
+  "ORCHESTRATOR_DELAYED",
+  "ORCHESTRATOR_OMISSION",
+  "ORCHESTRATOR_STATUS",
+  "ORCHESTRATION_QUORUM_REACHED",
+  "ORCHESTRATION_NO_QUORUM",
+  "ORCHESTRATION_DECISION",
 ] as const;
 
 export type EventTypeValue = (typeof EVENT_TYPE_VALUES)[number];
