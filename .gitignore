@@ -153,3 +153,4 @@ results/
 
 # Blackboard runtime stores (Stage 4A) — generated per-replica SQLite DBs
 runtime/
+*.tsbuildinfo
