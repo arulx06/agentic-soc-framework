@@ -51,6 +51,9 @@ class ScientificRuntime:
     abm: DeviceABM
     comm_graph: object
     inventory: DeviceInventory
+    # Exposed so integration layers (Stage-4B Blackboard) can observe the
+    # authoritative validation boundary without touching scientific logic.
+    gateway: FindingGateway | None = None
 
     def close(self) -> None:
         try:
@@ -76,11 +79,17 @@ def build_runtime(
     pacing_speed: str = "max",
     sleeper=None,
     start_paused: bool = False,
+    finding_observers: tuple = (),
 ) -> ScientificRuntime:
     inventory = DeviceInventory.load(DEVICES_CSV)
     detector, profiler = load_models()
     abm = DeviceABM(inventory, build_topology(inventory))
     gateway = FindingGateway(abm)
+    # Stage-4B: observers receive ACCEPTED findings only (post-validation,
+    # post-ABM-apply). Rejected findings never reach an observer, and the
+    # existing ABM path is untouched — no double processing is possible.
+    for observer in finding_observers:
+        gateway.subscribe(observer)
     comm = build_comm_graph(inventory=inventory)
 
     def store_streams():
@@ -163,7 +172,12 @@ def build_runtime(
 
     control = ReplayControl(start_paused=start_paused)
     return ScientificRuntime(
-        runner=runner, control=control, abm=abm, comm_graph=comm, inventory=inventory
+        runner=runner,
+        control=control,
+        abm=abm,
+        comm_graph=comm,
+        inventory=inventory,
+        gateway=gateway,
     )
 
 
