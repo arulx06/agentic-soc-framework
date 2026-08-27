@@ -10,10 +10,8 @@ router = APIRouter()
 @router.websocket("/replays/{replay_id}/events")
 async def replay_events(websocket: WebSocket, replay_id: str):
     controller = websocket.app.state.controller
-    # validate replay before accepting
-    with controller._lock:
-        known = replay_id in controller._runs
-    if not known:
+    # Fixed operational namespaces are subscribable without fake replay runs.
+    if not controller.event_stream_exists(replay_id):
         await websocket.close(code=4404)
         return
 
@@ -38,8 +36,8 @@ async def replay_events(websocket: WebSocket, replay_id: str):
                         "replay_id": replay_id,
                         "gap_notice": True,
                         "message": (
-                            "subscriber queue overflow; reconnect and use REST "
-                            "snapshots as authoritative"
+                            "subscriber queue overflow; reconnect and use the "
+                            "stream's REST state endpoint as authoritative"
                         ),
                     }
                 )

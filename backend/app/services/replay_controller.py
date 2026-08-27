@@ -27,6 +27,7 @@ from backend.app.config import (
     EVENT_RING_BUFFER_SIZE,
     FEATURE_STORE_ROOT,
     MAX_LATENESS_SECONDS_DEFAULT,
+    ORCHESTRATION_OPS_RUN_ID,
     SUBSCRIBER_QUEUE_SIZE,
 )
 from backend.app.contracts.events_v1 import EventEnvelopeV1, ReplayEventType
@@ -109,7 +110,10 @@ class ReplayController:
         self.blackboard = blackboard
         if self.blackboard is not None:
             self.blackboard.publisher = self._publish_blackboard_event
-        self._ops_sequence = 0
+        self._operational_sequences = {
+            BLACKBOARD_OPS_RUN_ID: 0,
+            ORCHESTRATION_OPS_RUN_ID: 0,
+        }
         self._lock = threading.RLock()
         self._lifecycle_lock = threading.RLock()
         self._runs: dict[str, _Run] = {}
@@ -144,22 +148,72 @@ class ReplayController:
                 source_component="backend.app.services.blackboard_service",
             )
             return
+        self._publish_operational_event(
+            BLACKBOARD_OPS_RUN_ID,
+            event_type,
+            payload,
+            source_component="backend.app.services.blackboard_service",
+            provenance_namespace="blackboard-operational",
+            logical_timestamp=logical_timestamp,
+            window_id=window_id,
+            entity_id=entity_id,
+        )
+
+    def _publish_orchestration_event(
+        self,
+        event_type: ReplayEventType,
+        payload: dict,
+        *,
+        logical_timestamp: str | None = None,
+        window_id: int | None = None,
+        entity_id: str | None = None,
+    ) -> None:
+        self._publish_operational_event(
+            ORCHESTRATION_OPS_RUN_ID,
+            event_type,
+            payload,
+            source_component="backend.app.services.orchestration_service",
+            provenance_namespace="orchestration-operational",
+            logical_timestamp=logical_timestamp,
+            window_id=window_id,
+            entity_id=entity_id,
+        )
+
+    def _publish_operational_event(
+        self,
+        stream_id: str,
+        event_type: ReplayEventType,
+        payload: dict,
+        *,
+        source_component: str,
+        provenance_namespace: str,
+        logical_timestamp: str | None = None,
+        window_id: int | None = None,
+        entity_id: str | None = None,
+    ) -> EventEnvelopeV1:
+        if stream_id not in self._operational_sequences:
+            raise ValueError(f"unknown operational event stream {stream_id!r}")
         with self._lock:
-            seq = self._ops_sequence
-            self._ops_sequence += 1
+            seq = self._operational_sequences[stream_id]
+            self._operational_sequences[stream_id] += 1
             envelope = EventEnvelopeV1(
-                replay_id=BLACKBOARD_OPS_RUN_ID,
-                event_id=f"{BLACKBOARD_OPS_RUN_ID}-{seq}",
+                replay_id=stream_id,
+                event_id=f"{stream_id}-{seq}",
                 sequence_number=seq,
                 event_type=event_type,
                 logical_timestamp=logical_timestamp,
                 window_id=window_id,
                 entity_id=entity_id,
-                source_component="backend.app.services.blackboard_service",
+                source_component=source_component,
                 payload=payload,
-                provenance={"namespace": "blackboard-operational"},
+                provenance={"namespace": provenance_namespace},
             )
             self.broker.publish(envelope)
+            return envelope
+
+    def event_stream_exists(self, stream_id: str) -> bool:
+        with self._lock:
+            return stream_id in self._runs or stream_id in self._operational_sequences
 
     def _blackboard_on_finding(self, run: _Run, finding) -> None:
         """Gateway observer: accepted findings only. Failures here must

@@ -23,14 +23,18 @@ from backend.app.contracts.common import ApiErrorV1  # noqa: E402
 from backend.app.services.replay_controller import ControllerError, ReplayController  # noqa: E402
 from backend.app.services.blackboard_service import BlackboardService  # noqa: E402
 from backend.app.services.snapshot_store import SnapshotStore  # noqa: E402
+from backend.app.services.orchestration_service import OrchestrationService  # noqa: E402
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # startup: nothing to prepare eagerly; scientific runtimes are built
     # lazily per replay by the controller.
-    yield
-    # shutdown: release worker threads / scientific resources.
-    controller.shutdown()
+    try:
+        yield
+    finally:
+        # Stop new adjudication before releasing replay/event resources.
+        orchestration_service.shutdown()
+        controller.shutdown()
 
 
 app = FastAPI(
@@ -64,10 +68,13 @@ blackboard_service = BlackboardService(
 )
 
 controller = ReplayController(blackboard=blackboard_service)
+orchestration_service = OrchestrationService()
+orchestration_service.publisher = controller._publish_orchestration_event
 snapshot_store = SnapshotStore()
 app.state.controller = controller
 app.state.snapshot_store = snapshot_store
 app.state.blackboard = blackboard_service
+app.state.orchestration = orchestration_service
 
 
 @app.exception_handler(ControllerError)

@@ -4,7 +4,8 @@ Implemented device-layer cybersecurity research system built around the
 **DataSense / CIC IIoT Dataset 2025**. The repository provides bounded raw
 ingestion, a versioned feature store, smoke detection artifacts, Findings and
 Gateway validation, a device ABM, risk and communication graphs, DEVICE_ONLY
-SREP, a versioned FastAPI service, and a React dashboard.
+SREP, a replicated Blackboard, a three-orchestrator quorum adjudication
+substrate, a versioned FastAPI service, and a React dashboard.
 
 ## Data Source
 
@@ -56,6 +57,7 @@ SREP, or saved replay snapshots.
 - `simulation/`: replay runner, control boundaries, ABM, and graphs
 - `srep/`: DEVICE_ONLY security-risk evaluation
 - `backend/app/`: FastAPI routes, contracts, controller, broker, snapshots
+- `orchestration/`: authenticated three-replica opaque-route adjudication core
 - `frontend/`: React 18, TypeScript, Vite dashboard
 - `tests/`: organized Python unit, integration, regression, and real-data suites
 - `docs/`: scientific audits, methodology, FastAPI, and React documentation
@@ -126,6 +128,25 @@ BLACKBOARD_* events flow through the same replay WebSocket chronology.
 
 See `docs/stage4a_blackboard_core.md` and `docs/stage4b_blackboard_integration.md`.
 
+## Orchestrator Quorum Backend (Stage 6)
+
+The backend owns exactly three independent orchestrators (`orchestrator_a`,
+`orchestrator_b`, `orchestrator_c`). They emit versioned HMAC-SHA256-authenticated
+proposals and votes for caller-declared opaque routes. Two distinct compatible
+`APPROVE` votes are required for a decision; timeout, delay, omission,
+unavailability, disagreement, duplicates, conflicts, and provenance are exposed
+through bounded REST history and the WebSocket-subscribable `orchestration-ops`
+event namespace.
+
+This is quorum-based adjudication under authenticated orchestrator-message
+assumptions, not BFT, PBFT, or Byzantine consensus. A selected route is not
+executed. Stage 6 adds no five-agent workflow, authoritative
+ALLOW/MONITOR/BLOCK enforcement, L-ZTAF/Agent Trust Graph, watchdog, or Attack
+Injection Engine. The three orchestrators are separate from Blackboard storage
+`replica_a`, `replica_b`, and `replica_c`.
+
+See `docs/stage6_orchestrator_quorum.md`.
+
 ## React Dashboard
 
 ```bash
@@ -173,7 +194,8 @@ cd frontend
 npm test
 ```
 
-Current verified totals are 408 Python tests and 160 frontend tests (Vitest, 11 files; 96 Stage-3 + 64 Stage-5 including micro-closure). Suite
+Current verified totals are 482 Python tests and 161 frontend tests (Vitest,
+11 files; the Stage-6 frontend change is transport compatibility only). Suite
 layout, prerequisites, fixtures, temporary-file policy, and every test module's
 responsibility are documented in `tests.md`.
 
@@ -186,4 +208,5 @@ responsibility are documented in `tests.md`.
 - `docs/stage3b_react_dashboard.md`: frontend synchronization and rendering
 - `docs/stage4a_blackboard_core.md` / `docs/stage4b_blackboard_integration.md`: replicated Blackboard substrate
 - `docs/stage5_react_blackboard.md`: Blackboard frontend visualization — authoritative boundary, endpoints/events, overview/replicas/records/trace, bounded views, NOT-BFT
+- `docs/stage6_orchestrator_quorum.md`: authenticated three-orchestrator two-of-three adjudication, REST/events, fault assumptions and boundaries
 - `tests.md`: complete automated-test catalog

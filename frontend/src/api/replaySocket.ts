@@ -1,6 +1,6 @@
 /**
  * ReplaySocket: manages one WebSocket connection per replay.
- * Validates the 17-value event-type enum and schema_version; enforces
+ * Validates the shared backend event-type registry and schema_version; enforces
  * strictly increasing sequence numbers; handles gap notices from the
  * server; reconnects with bounded exponential backoff while non-terminal.
  */
