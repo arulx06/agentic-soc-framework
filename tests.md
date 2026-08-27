@@ -36,7 +36,7 @@ npm test
 npm run build
 ```
 
-Current verified totals:
+Current verified totals (2026-08-27, Stage-5 `feat/blackboard-ui`):
 
 | Suite | Tests |
 |---|---:|
@@ -44,8 +44,14 @@ Current verified totals:
 | Python FastAPI | 66 |
 | Blackboard core (Stage-4A, `tests/unit/blackboard`) | 134 |
 | Blackboard integration (Stage-4B, `tests/integration/backend/blackboard`) | 30 |
-| Python combined | 396 |
-| Frontend Vitest | 80 |
+| Python combined (`python -m pytest tests -q`) | 408 |
+| Frontend Vitest — Stage-3 (prior) | 96 |
+| Frontend Vitest — Stage-5 Blackboard (new) | 64 |
+| Frontend Vitest combined (`cd frontend && npm test`) | 160 |
+| Frontend type-check (`npm run type-check`) | 0 errors |
+| Frontend production build (`npm run build`) | ✓ |
+
+Backend Stage-4 tests remain the reference — Stage 5 is frontend-only and does not change `blackboard/` or `backend/app` quorum logic (see `docs/stage5_react_blackboard.md` §23).
 
 ## Python Layout
 
@@ -204,16 +210,35 @@ Frontend tests live under `frontend/src/test` and run with Vitest/jsdom.
 | `communicationPerWindow.test.ts` | Maps per-window communication deltas into line width and directional particle behavior. |
 | `dashboard.test.tsx` | Covers header warnings/progress, device unsupported/zero semantics, trust placeholder, and DEVICE_ONLY SREP display. |
 | `graphModel.test.ts` | Validates graph conversion, topology identity, coordinates, filtering, and presentation metadata. |
+| `nodeModelRegistry.test.ts` | Validates 3D node model registry and material contracts (Stage-3D). |
 | `replayControlsHybrid.test.tsx` | Enforces lifecycle control availability, startup guards, terminal Create, pacing rules, and restart overrides. |
 | `replaySocket.test.ts` | Rejects foreign replay envelopes before sequence and terminal tracking. |
 | `replaySync.test.ts` | Covers bounded event history, gaps, namespace reset, startup lifecycle, and stale terminal-state rejection. |
 | `replaySynchronizer.test.ts` | Covers REST authority, active replay recovery, Create conflicts, startup races, coalescing, terminal convergence, and stale-request protection. |
 | `stage3b.test.tsx` | Exercises REST control contracts and core Stage 3B component behavior. |
 | `stage3b_corrective.test.ts` | Covers contract rejection, graph stability, search/neighborhood behavior, and corrective presentation rules. |
+| `blackboard.test.tsx` | Stage-5: API/types, overview (healthy/degraded/offline + N/A + NOT-BFT), replica cards (3×, HEALTHY/DIVERGED/UNAVAILABLE, PRESERVED_DIVERGENT_HEAD, no trust), record browser (pagination/filters/hash/author/null semantics), bounded view (complete/truncated, qualified vs authoritative totals + non-vacuous snapshot warning), write outcomes (COMMITTED/PARTIAL_COMMIT/FAILED_QUORUM/FAILED_STORAGE/STALE/CONFLICT), read outcomes (CONSISTENT/DEGRADED/INSUFFICIENT/INCONSISTENT/UNAVAILABLE), live events (sequence order + 13 BLACKBOARD_* shapes), operation trace (grouping by operation_id, backend terminal not ACK-count, two mandatory negative architecture tests), WebSocket disconnect/reconnecting/gap (genuine BlackboardView + real reducer/gapDetected, REST preserved, no fabricate), bounded-refresh regression (same-length replacement triggers refresh via sequence+event_id, duplicate no-loop) + dashboard regression (SREP DEVICE_ONLY / placeholder / nav tabs), ground-truth leakage, hash helpers and 30-value EventEnvelope acceptance (64 tests). |
 
 `frontend/src/test/fixtures.ts` contains test-only contracts and snapshots;
 `frontend/src/test/setup.ts` installs shared jsdom matchers. Neither is a
 collected test module.
+
+### Stage-5 verification outputs (2026-08-28, micro-closure)
+
+```text
+# Backend (unchanged Stage-4)
+python -m pytest tests -q                          → 408 passed
+python -m pytest tests/unit/blackboard -q         → 134 passed
+python -m pytest tests/integration/backend/blackboard -q → 30 passed
+
+# Frontend
+cd frontend
+npm run type-check                                 → 0 errors
+npm test                                           → 11 files, 160 passed (96 Stage-3 + 64 Stage-5)
+npm run build                                      → ✓ 473 modules, build succeeded
+```
+
+Micro-closure fixes: BlackboardView refresh now keyed to newest relevant `sequence_number` + `event_id` (not `length`), `eventsVersion` removed; vacuous `toBeGreaterThanOrEqual(0)` snapshot test replaced with `findByTestId("snapshot-truncated-warning")` + content; WebSocket disconnect/reconnect/gap tests now exercise real `BlackboardView` + `ReplayContext`/`replayReducer` `EVENT_GAP`; added bounded-refresh regression (same-length replacement).
 
 ## Data And Artifact Prerequisites
 

@@ -248,6 +248,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .drawer-heading { padding-bottom: 14px; border-bottom: 1px solid var(--border-subtle); }
 .drawer-heading h2 { margin: 0; font-size: 0.88rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.view-switch { margin-top: 2px; }
+.hash-field { display: inline-flex; align-items: center; gap: 6px; }
+.icon-button--hash { width: 22px; height: 22px; font-size: 0.7rem; }
+.tone-committed { color: var(--accent-green); }
+.tone-partial { color: var(--accent-amber); }
+.tone-failed { color: var(--accent-red); }
+.tone-rejected { color: #fb7185; }
+.tone-unknown { color: var(--text-muted); }
+.tone-conflict { color: #f97316; }
+.blackboard-view { animation: bbIn 120ms ease; }
+@keyframes bbIn { from { opacity: 0; } to { opacity: 1; } }
+.metric-grid--counters { grid-template-columns: repeat(4, 1fr); }
+.metric-grid--counters > div { padding: 8px; }
+.replica-grid { margin-top: 4px; }
+@media (max-width: 780px) { .replica-grid { grid-template-columns: 1fr !important; } .metric-grid--counters { grid-template-columns: 1fr 1fr; } }
 
 @media (max-width: 1120px) {
   .application-header { grid-template-columns: 1fr auto; }

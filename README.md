@@ -149,7 +149,12 @@ calculate scientific values. Startup is guarded while the backend constructs a
 runtime, active replay state is recovered after refresh, and foreign replay
 events are rejected before sequence tracking.
 
-See `docs/stage3b_react_dashboard.md`.
+- Stage-3: Device Risk Graph, Communication Graph, device state, `SREP MODE: DEVICE_ONLY`, findings/provenance (see `docs/stage3b_react_dashboard.md`).
+- Stage-5: Quorum-replicated Blackboard explainability — health/snapshot, three replica cards, committed-record browser (paginated, filtered), record detail/version with provenance, bounded/truncated warnings, live BLACKBOARD_* activity in backend `sequence_number` order, operation trace grouped by backend `operation_id` (terminal only, never ACK-inferred), hash copy, NOT-BFT disclaimer. React never implements quorum — Python backend is authoritative.
+
+The Blackboard view shares the existing single dashboard via `Device View | Blackboard` tabs; no raw `fetch()` escapes `ApiClient`; browser event history is bounded (`EVENT_BUFFER_LIMIT` 1500 + `LiveActivity` window 120).
+
+See `docs/stage3b_react_dashboard.md` and `docs/stage5_react_blackboard.md`.
 
 ## Tests
 
@@ -168,7 +173,7 @@ cd frontend
 npm test
 ```
 
-Current verified totals are 244 Python tests and 80 frontend tests. Suite
+Current verified totals are 408 Python tests and 160 frontend tests (Vitest, 11 files; 96 Stage-3 + 64 Stage-5 including micro-closure). Suite
 layout, prerequisites, fixtures, temporary-file policy, and every test module's
 responsibility are documented in `tests.md`.
 
@@ -179,4 +184,6 @@ responsibility are documented in `tests.md`.
 - `docs/datasense_audit.md`: processed release audit
 - `docs/stage3a_fastapi_backend.md`: backend contracts and replay lifecycle
 - `docs/stage3b_react_dashboard.md`: frontend synchronization and rendering
+- `docs/stage4a_blackboard_core.md` / `docs/stage4b_blackboard_integration.md`: replicated Blackboard substrate
+- `docs/stage5_react_blackboard.md`: Blackboard frontend visualization — authoritative boundary, endpoints/events, overview/replicas/records/trace, bounded views, NOT-BFT
 - `tests.md`: complete automated-test catalog

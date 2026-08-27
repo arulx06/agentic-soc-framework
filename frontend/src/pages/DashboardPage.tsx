@@ -14,6 +14,7 @@ import { SrepPanel } from "../components/srep/SrepPanel";
 import { SnapshotPanel } from "../components/snapshots/SnapshotPanel";
 import { ProvenancePanel } from "../components/provenance/ProvenancePanel";
 import { EventGapBanner } from "../components/common/EventGapBanner";
+import { BlackboardView } from "../components/blackboard/BlackboardView";
 
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8000/api/v1";
 
@@ -23,6 +24,7 @@ export function DashboardPage() {
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [recoveringReplay, setRecoveringReplay] = useState(true);
+  const [activeView, setActiveView] = useState<"device" | "blackboard">("device");
   const snapshots = useSnapshots(client);
   const synchronizer = useReplayEvents(client, dispatch, state, WS_BASE);
 
@@ -100,43 +102,78 @@ export function DashboardPage() {
         )}
         <EventGapBanner gap={state.gapDetected} truncated={state.eventHistoryTruncated} />
 
-        <section className="runtime-summary" aria-label="Replay summary">
-          <Summary
-            label="Replay state"
-            value={state.isStarting ? "Starting..." : status?.state ?? "Not created"}
-          />
-          <Summary label="Windows processed" value={`${status?.windows_processed ?? 0} / ${status?.windows_total ?? "?"}`} />
-          <Summary label="Findings emitted" value={String(sumValues(status?.findings_emitted))} />
-          <Summary label="Current window" value={status?.last_window_id != null ? String(status.last_window_id + 1) : "-"} />
-          <div className="progress-summary">
-            <div><span>Replay progress</span><strong className="mono">{Math.round(progress)}%</strong></div>
-            <div className="progress-track"><i style={{ width: `${progress}%` }} /></div>
+        <nav className="view-switch" aria-label="Dashboard view" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <div className="segmented-control" role="tablist">
+            <button
+              role="tab"
+              aria-selected={activeView === "device"}
+              aria-controls="device-view"
+              className={activeView === "device" ? "is-active" : ""}
+              onClick={() => setActiveView("device")}
+              data-testid="nav-device-view"
+            >
+              Device View
+            </button>
+            <button
+              role="tab"
+              aria-selected={activeView === "blackboard"}
+              aria-controls="blackboard-view"
+              className={activeView === "blackboard" ? "is-active" : ""}
+              onClick={() => setActiveView("blackboard")}
+              data-testid="nav-blackboard"
+            >
+              Blackboard
+            </button>
           </div>
-        </section>
+        </nav>
 
-        <GraphWorkspace
-          riskSnapshot={state.riskGraph}
-          communicationSnapshot={state.commGraph}
-          isRunning={isRunning}
-        />
+        {activeView === "device" && (
+          <div id="device-view" role="tabpanel" aria-label="Device View">
+            <section className="runtime-summary" aria-label="Replay summary">
+              <Summary
+                label="Replay state"
+                value={state.isStarting ? "Starting..." : status?.state ?? "Not created"}
+              />
+              <Summary label="Windows processed" value={`${status?.windows_processed ?? 0} / ${status?.windows_total ?? "?"}`} />
+              <Summary label="Findings emitted" value={String(sumValues(status?.findings_emitted))} />
+              <Summary label="Current window" value={status?.last_window_id != null ? String(status.last_window_id + 1) : "-"} />
+              <div className="progress-summary">
+                <div><span>Replay progress</span><strong className="mono">{Math.round(progress)}%</strong></div>
+                <div className="progress-track"><i style={{ width: `${progress}%` }} /></div>
+              </div>
+            </section>
 
-        <section className="analysis-grid" aria-label="Replay analysis panels">
-          <div className="analysis-grid__summary">
-            <SrepPanel srep={state.srep} />
-            <ProvenancePanel />
+            <GraphWorkspace
+              riskSnapshot={state.riskGraph}
+              communicationSnapshot={state.commGraph}
+              isRunning={isRunning}
+            />
+
+            <section className="analysis-grid" aria-label="Replay analysis panels">
+              <div className="analysis-grid__summary">
+                <SrepPanel srep={state.srep} />
+                <ProvenancePanel />
+              </div>
+              <DeviceStateTable devices={state.deviceStates} />
+              <FindingsStream events={state.events} />
+              <TrustGraphPlaceholder />
+              <SnapshotPanel
+                snapshots={snapshots.snapshots}
+                selected={snapshots.selectedSnapshot}
+                loading={snapshots.loading}
+                error={snapshots.error}
+                onRead={snapshots.read}
+                onCloseRead={snapshots.closeReadView}
+              />
+            </section>
           </div>
-          <DeviceStateTable devices={state.deviceStates} />
-          <FindingsStream events={state.events} />
-          <TrustGraphPlaceholder />
-          <SnapshotPanel
-            snapshots={snapshots.snapshots}
-            selected={snapshots.selectedSnapshot}
-            loading={snapshots.loading}
-            error={snapshots.error}
-            onRead={snapshots.read}
-            onCloseRead={snapshots.closeReadView}
-          />
-        </section>
+        )}
+
+        {activeView === "blackboard" && (
+          <div id="blackboard-view" role="tabpanel" aria-label="Blackboard">
+            <BlackboardView client={client} />
+          </div>
+        )}
       </main>
     </div>
   );

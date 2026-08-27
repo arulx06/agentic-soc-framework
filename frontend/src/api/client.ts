@@ -7,10 +7,16 @@
 import { z } from "zod";
 import {
   ApiErrorV1Schema,
+  BlackboardHealthV1Schema,
+  BlackboardReadResultV1Schema,
+  BlackboardRecordListingV1Schema,
+  BlackboardReplicasResponseSchema,
+  BlackboardSnapshotV1Schema,
   CommunicationGraphSnapshotV1Schema,
   DeviceStateListV1Schema,
   DeviceRiskGraphSnapshotV1Schema,
   HealthResponseSchema,
+  ReplicaStatusV1Schema,
   ReplayStatusV1Schema,
   ReplayCreateResponseSchema,
   ReplayControlResponseSchema,
@@ -237,6 +243,65 @@ export class ApiClient {
       "POST",
       "/snapshots",
       z.object({ snapshot_id: z.string(), path: z.string() })
+    );
+  }
+
+  // ─── Blackboard (Stage-5) ────────────────────────────────────────────────
+
+  getBlackboardHealth() {
+    return this.request("GET", "/blackboard/health", BlackboardHealthV1Schema);
+  }
+
+  getBlackboardSnapshot() {
+    return this.request("GET", "/blackboard/snapshot", BlackboardSnapshotV1Schema);
+  }
+
+  getBlackboardReplicas() {
+    return this.request("GET", "/blackboard/replicas", BlackboardReplicasResponseSchema);
+  }
+
+  getBlackboardReplica(replicaId: string) {
+    return this.request(
+      "GET",
+      `/blackboard/replicas/${encodeURIComponent(replicaId)}`,
+      ReplicaStatusV1Schema
+    );
+  }
+
+  listBlackboardRecords(params?: {
+    record_type?: string;
+    key_prefix?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const search = new URLSearchParams();
+    if (params?.record_type) search.set("record_type", params.record_type);
+    if (params?.key_prefix) search.set("key_prefix", params.key_prefix);
+    if (params?.limit !== undefined) search.set("limit", String(params.limit));
+    if (params?.offset !== undefined) search.set("offset", String(params.offset));
+    const qs = search.toString();
+    return this.request(
+      "GET",
+      `/blackboard/records${qs ? `?${qs}` : ""}`,
+      BlackboardRecordListingV1Schema
+    );
+  }
+
+  getBlackboardRecord(recordKey: string) {
+    const encoded = recordKey.split("/").map(encodeURIComponent).join("/");
+    return this.request(
+      "GET",
+      `/blackboard/records/${encoded}`,
+      BlackboardReadResultV1Schema
+    );
+  }
+
+  getBlackboardRecordVersion(recordKey: string, version: number) {
+    const encoded = recordKey.split("/").map(encodeURIComponent).join("/");
+    return this.request(
+      "GET",
+      `/blackboard/records/${encoded}/versions/${version}`,
+      BlackboardReadResultV1Schema
     );
   }
 }
