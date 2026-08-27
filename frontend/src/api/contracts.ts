@@ -269,8 +269,196 @@ export const SessionListResponseSchema = z.object({
   default_session: z.string(),
 });
 
-// ─── Event envelope (17-value enum) ─────────────────────────────────────────
+// ─── Blackboard contracts (mirrors backend/app/contracts/blackboard_v1.py + blackboard/contracts.py) ──
 
+export const BlackboardRecordTypeValues = [
+  "NETWORK_FINDING_RECORD",
+  "BEHAVIOR_FINDING_RECORD",
+  "DEVICE_STATE_RECORD",
+  "DEVICE_RISK_SNAPSHOT_RECORD",
+  "DEVICE_ONLY_SREP_RECORD",
+  "SYSTEM_RECORD",
+] as const;
+export type BlackboardRecordTypeValue = (typeof BlackboardRecordTypeValues)[number];
+
+export const WriteOutcomeValues = [
+  "COMMITTED",
+  "PARTIAL_COMMIT",
+  "REJECTED_STALE",
+  "REJECTED_CONFLICT",
+  "REJECTED_SCHEMA",
+  "REJECTED_AUTHORIZATION",
+  "FAILED_QUORUM",
+  "FAILED_STORAGE",
+] as const;
+export type WriteOutcomeValue = (typeof WriteOutcomeValues)[number];
+
+export const ReadOutcomeValues = [
+  "CONSISTENT",
+  "DEGRADED_CONSISTENT",
+  "NOT_FOUND",
+  "INSUFFICIENT_QUORUM",
+  "INCONSISTENT",
+  "UNAVAILABLE",
+  "AUTHORIZATION_REJECTED",
+] as const;
+export type ReadOutcomeValue = (typeof ReadOutcomeValues)[number];
+
+export const ReplicaHealthValues = ["HEALTHY", "UNAVAILABLE", "DIVERGED"] as const;
+export type ReplicaHealthValue = (typeof ReplicaHealthValues)[number];
+
+export const AckStatusValues = [
+  "ACK_PREPARED",
+  "ACK_COMMITTED",
+  "ABORTED",
+  "REJECT_STALE",
+  "REJECT_CONFLICT",
+  "REJECT_SCHEMA",
+  "REJECT_INTEGRITY",
+  "REJECT_AUTHORIZATION",
+  "UNAVAILABLE",
+  "STORAGE_ERROR",
+] as const;
+export type AckStatusValue = (typeof AckStatusValues)[number];
+
+export const ReplicaStatusV1Schema = z.object({
+  replica_id: z.string(),
+  health: z.string(),
+  available: z.boolean(),
+  storage_error_count: z.number().int().min(0),
+  last_error: z.string().nullable(),
+  committed_record_count: z.number().int().min(0),
+  pending_record_count: z.number().int().min(0),
+  divergence_history: z.array(z.string()),
+  head: z.record(z.unknown()).nullable().optional(),
+});
+export type ReplicaStatusV1 = z.infer<typeof ReplicaStatusV1Schema>;
+
+export const RecordSummaryV1Schema = z.object({
+  record_key: z.string(),
+  record_type: z.string(),
+  record_version: z.number().int().min(1),
+  record_id: z.string(),
+  content_hash: z.string(),
+  author_id: z.string(),
+  source_component: z.string(),
+  logical_timestamp: z.string().nullable(),
+  window_id: z.number().nullable(),
+  supporting_replicas: z.array(z.string()),
+});
+export type RecordSummaryV1 = z.infer<typeof RecordSummaryV1Schema>;
+
+export const BlackboardRecordV1Schema = z.object({
+  schema_version: z.literal("blackboard_record_v1"),
+  record_id: z.string(),
+  record_key: z.string(),
+  record_type: z.string(),
+  record_version: z.number().int().min(1),
+  logical_timestamp: z.string().nullable(),
+  window_id: z.number().nullable(),
+  author_id: z.string(),
+  source_component: z.string(),
+  payload: z.record(z.unknown()),
+  provenance: z.record(z.unknown()),
+  content_hash: z.string(),
+});
+export type BlackboardRecordV1 = z.infer<typeof BlackboardRecordV1Schema>;
+
+export const BlackboardHealthV1Schema = z.object({
+  schema_version: z.literal("blackboard_health_v1"),
+  status: z.string(),
+  replicas_available: z.number().int().min(0),
+  replicas_total: z.number().int().min(0),
+  divergent_replicas: z.array(z.string()),
+  counters: z.record(z.number()),
+});
+export type BlackboardHealthV1 = z.infer<typeof BlackboardHealthV1Schema>;
+
+export const BlackboardSnapshotV1Schema = z.object({
+  schema_version: z.literal("blackboard_snapshot_v1"),
+  snapshot_id: z.string(),
+  generated_at_utc: z.string(),
+  scope_replay_id: z.string().nullable().optional(),
+  latest_by_key: z.record(RecordSummaryV1Schema),
+  recent_records: z.array(RecordSummaryV1Schema),
+  replica_statuses: z.array(ReplicaStatusV1Schema),
+  divergent_replicas: z.array(z.string()),
+  counters: z.record(z.number()),
+  latencies: z.record(z.unknown()),
+  recent_rejections: z.array(z.record(z.unknown())),
+  unverified_rows_excluded: z.number(),
+  truncated: z.boolean(),
+  truncated_replicas: z.array(z.string()),
+  bounds: z.record(z.unknown()),
+  provenance: z.record(z.unknown()),
+});
+export type BlackboardSnapshotV1 = z.infer<typeof BlackboardSnapshotV1Schema>;
+
+export const BlackboardRecordListingV1Schema = z.object({
+  schema_version: z.literal("blackboard_record_listing_v1"),
+  items: z.array(RecordSummaryV1Schema),
+  total: z.number().int().min(0),
+  limit: z.number().int().min(1),
+  offset: z.number().int().min(0),
+  unverified_rows_excluded: z.number(),
+  responsive_replicas: z.array(z.string()),
+  truncated: z.boolean(),
+  truncated_replicas: z.array(z.string()),
+  scanned_rows_per_replica: z.record(z.number()),
+  scan_bounds: z.record(z.unknown()),
+  bounds: z.record(z.unknown()),
+});
+export type BlackboardRecordListingV1 = z.infer<typeof BlackboardRecordListingV1Schema>;
+
+export const BlackboardReplicasResponseSchema = z.object({
+  schema_version: z.literal("blackboard_health_v1"),
+  replicas: z.array(ReplicaStatusV1Schema),
+  divergent_replicas: z.array(z.string()),
+  note: z.string(),
+});
+export type BlackboardReplicasResponse = z.infer<typeof BlackboardReplicasResponseSchema>;
+
+export const ReplicaReadObservationV1Schema = z.object({
+  replica_id: z.string(),
+  responded: z.boolean(),
+  found: z.boolean(),
+  record_version: z.number().nullable(),
+  content_hash: z.string().nullable(),
+  detail: z.string().nullable().optional(),
+});
+export type ReplicaReadObservationV1 = z.infer<typeof ReplicaReadObservationV1Schema>;
+
+export const BlackboardReadResultV1Schema = z.object({
+  schema_version: z.literal("blackboard_read_result_v1"),
+  read_operation_id: z.string(),
+  principal: z.string(),
+  record_key: z.string(),
+  requested_version: z.number().nullable(),
+  outcome: z.string(),
+  record: BlackboardRecordV1Schema.nullable(),
+  reason: z.string().nullable().optional(),
+  observations: z.array(ReplicaReadObservationV1Schema),
+  divergent_replicas: z.array(z.string()),
+  unavailable_replicas: z.array(z.string()),
+  duration_ms: z.number(),
+});
+export type BlackboardReadResultV1 = z.infer<typeof BlackboardReadResultV1Schema>;
+
+export const DevWriteResponseV1Schema = z.object({
+  schema_version: z.string(),
+  outcome: z.string(),
+  operation_id: z.string(),
+  record_id: z.string().nullable(),
+  record_key: z.string().nullable(),
+  record_version: z.number().nullable(),
+  content_hash: z.string().nullable(),
+  reason: z.string().nullable(),
+  replica_sync: z.record(z.string()),
+  durable_commit_ack_count: z.number(),
+});
+export type DevWriteResponseV1 = z.infer<typeof DevWriteResponseV1Schema>;
+
+// ─── Event envelope (30-value enum: 17 Stage-3 + 13 Stage-4B Blackboard) ───────
 export const EVENT_TYPE_VALUES = [
   "REPLAY_CREATED",
   "REPLAY_STARTED",
@@ -289,9 +477,38 @@ export const EVENT_TYPE_VALUES = [
   "DEVICE_RISK_GRAPH_SNAPSHOT",
   "COMMUNICATION_GRAPH_SNAPSHOT",
   "SREP_SNAPSHOT",
+  "BLACKBOARD_WRITE_PROPOSED",
+  "BLACKBOARD_REPLICA_ACK",
+  "BLACKBOARD_WRITE_COMMITTED",
+  "BLACKBOARD_WRITE_PARTIAL",
+  "BLACKBOARD_WRITE_ABORTED",
+  "BLACKBOARD_WRITE_REJECTED",
+  "BLACKBOARD_STALE_WRITE",
+  "BLACKBOARD_CONFLICT",
+  "BLACKBOARD_QUORUM_FAILED",
+  "BLACKBOARD_STORAGE_FAILED",
+  "BLACKBOARD_READ",
+  "BLACKBOARD_READ_INCONSISTENT",
+  "BLACKBOARD_REPLICA_STATUS",
 ] as const;
 
 export type EventTypeValue = (typeof EVENT_TYPE_VALUES)[number];
+
+export const BLACKBOARD_EVENT_TYPES: ReadonlySet<EventTypeValue> = new Set<EventTypeValue>([
+  "BLACKBOARD_WRITE_PROPOSED",
+  "BLACKBOARD_REPLICA_ACK",
+  "BLACKBOARD_WRITE_COMMITTED",
+  "BLACKBOARD_WRITE_PARTIAL",
+  "BLACKBOARD_WRITE_ABORTED",
+  "BLACKBOARD_WRITE_REJECTED",
+  "BLACKBOARD_STALE_WRITE",
+  "BLACKBOARD_CONFLICT",
+  "BLACKBOARD_QUORUM_FAILED",
+  "BLACKBOARD_STORAGE_FAILED",
+  "BLACKBOARD_READ",
+  "BLACKBOARD_READ_INCONSISTENT",
+  "BLACKBOARD_REPLICA_STATUS",
+]);
 
 const EventTypeSchema = z.enum(EVENT_TYPE_VALUES);
 export { EventTypeSchema as ReplayEventType };
@@ -314,4 +531,8 @@ export type EventEnvelopeV1 = z.infer<typeof EventEnvelopeV1Schema>;
 export function isEventEnvelope(raw: unknown): EventEnvelopeV1 | null {
   const r = EventEnvelopeV1Schema.safeParse(raw);
   return r.success ? r.data : null;
+}
+
+export function isBlackboardEvent(envelope: EventEnvelopeV1): boolean {
+  return BLACKBOARD_EVENT_TYPES.has(envelope.event_type as EventTypeValue);
 }
