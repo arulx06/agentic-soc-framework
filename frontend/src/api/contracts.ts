@@ -458,7 +458,300 @@ export const DevWriteResponseV1Schema = z.object({
 });
 export type DevWriteResponseV1 = z.infer<typeof DevWriteResponseV1Schema>;
 
-// Transport registry only; Stage-6 UI is intentionally not implemented.
+// ─── Orchestration contracts (Stage-6 public transport) ─────────────────────
+
+export const ORCHESTRATION_FORBIDDEN_KEYS = [
+  "label",
+  "label1",
+  "label2",
+  "label3",
+  "label4",
+  "label_full",
+  "is_attack",
+  "attack",
+  "attack_category",
+  "attack_name",
+  "attack_names",
+  "target",
+  "targets",
+  "target_device",
+  "whole_network_target",
+  "ground_truth",
+  "scenario_id",
+  "scenario_name",
+  "scenario_ids",
+  "scenario_names",
+  "filename",
+] as const;
+
+const orchestrationForbiddenKeySet = new Set<string>(ORCHESTRATION_FORBIDDEN_KEYS);
+
+export function hasForbiddenOrchestrationKey(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasForbiddenOrchestrationKey);
+  if (value === null || typeof value !== "object") return false;
+  return Object.entries(value).some(
+    ([key, nested]) =>
+      orchestrationForbiddenKeySet.has(key.trim().toLowerCase()) ||
+      hasForbiddenOrchestrationKey(nested)
+  );
+}
+
+const RuntimeSafeOrchestrationRecordSchema = z.record(z.unknown()).superRefine(
+  (value, context) => {
+    if (hasForbiddenOrchestrationKey(value)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Forbidden evaluation metadata is not valid orchestration transport",
+      });
+    }
+  }
+);
+
+export const OrchestrationOutcomeValues = [
+  "DECIDED",
+  "NO_QUORUM",
+  "TIMED_OUT",
+  "INSUFFICIENT_RESPONSES",
+  "REJECTED_REQUEST",
+] as const;
+export const OrchestrationOutcomeSchema = z.enum(OrchestrationOutcomeValues);
+export type OrchestrationOutcome = z.infer<typeof OrchestrationOutcomeSchema>;
+
+export const VoteValueValues = ["APPROVE", "REJECT", "ABSTAIN"] as const;
+export const VoteValueSchema = z.enum(VoteValueValues);
+export type VoteValue = z.infer<typeof VoteValueSchema>;
+
+export const OrchestratorHealthValues = [
+  "HEALTHY",
+  "DEGRADED",
+  "UNAVAILABLE",
+] as const;
+export const OrchestratorHealthSchema = z.enum(OrchestratorHealthValues);
+export type OrchestratorHealth = z.infer<typeof OrchestratorHealthSchema>;
+
+export const OrchestratorRecentOutcomeV1Schema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("PROPOSAL"),
+    request_id: z.string(),
+    route_id: z.string(),
+  }).strict(),
+  z.object({
+    kind: z.literal("VOTE"),
+    request_id: z.string(),
+    proposal_digest: z.string(),
+  }).strict(),
+]);
+export type OrchestratorRecentOutcomeV1 = z.infer<
+  typeof OrchestratorRecentOutcomeV1Schema
+>;
+
+export const OrchestratorStatusV1Schema = z.object({
+  schema_version: z.literal("orchestrator_status_v1"),
+  orchestrator_id: z.string(),
+  health: OrchestratorHealthSchema,
+  available: z.boolean(),
+  messages_proposed: z.number().int().min(0),
+  votes_issued: z.number().int().min(0),
+  authentication_failures_observed: z.number().int().min(0),
+  timeouts: z.number().int().min(0),
+  omissions: z.number().int().min(0),
+  last_error: z.string().nullable(),
+  recent_outcomes: z.array(OrchestratorRecentOutcomeV1Schema),
+  recent_outcomes_limit: z.number().int().min(1),
+}).strict();
+export type OrchestratorStatusV1 = z.infer<typeof OrchestratorStatusV1Schema>;
+
+export const OrchestratorListingV1Schema = z.object({
+  schema_version: z.literal("orchestrator_listing_v1"),
+  replicas: z.array(OrchestratorStatusV1Schema),
+  note: z.string(),
+}).strict();
+export type OrchestratorListingV1 = z.infer<typeof OrchestratorListingV1Schema>;
+
+export const OrchestrationCountersV1Schema = z.object({
+  rounds_started: z.number().int().min(0),
+  decisions_reached: z.number().int().min(0),
+  no_quorum: z.number().int().min(0),
+  timed_out: z.number().int().min(0),
+  insufficient_responses: z.number().int().min(0),
+  proposals_received: z.number().int().min(0),
+  proposals_rejected: z.number().int().min(0),
+  votes_received: z.number().int().min(0),
+  votes_rejected: z.number().int().min(0),
+  authentication_failures: z.number().int().min(0),
+  duplicate_messages: z.number().int().min(0),
+  conflicting_votes: z.number().int().min(0),
+  orchestrator_timeouts: z.number().int().min(0),
+  orchestrator_delays: z.number().int().min(0),
+  orchestrator_omissions: z.number().int().min(0),
+  orchestrator_disagreements: z.number().int().min(0),
+}).strict();
+export type OrchestrationCountersV1 = z.infer<
+  typeof OrchestrationCountersV1Schema
+>;
+
+export const OrchestrationLatencySummaryV1Schema = z.union([
+  z.object({ count: z.literal(0) }).strict(),
+  z.object({
+    count: z.number().int().min(1),
+    mean_ms: z.number().min(0),
+    p50_ms: z.number().min(0),
+    p95_ms: z.number().min(0),
+    max_ms: z.number().min(0),
+  }).strict(),
+]);
+export type OrchestrationLatencySummaryV1 = z.infer<
+  typeof OrchestrationLatencySummaryV1Schema
+>;
+
+export const OrchestrationLatenciesV1Schema = z.object({
+  proposal_ms: OrchestrationLatencySummaryV1Schema,
+  vote_ms: OrchestrationLatencySummaryV1Schema,
+  quorum_ms: OrchestrationLatencySummaryV1Schema,
+  decision_ms: OrchestrationLatencySummaryV1Schema,
+}).strict();
+export type OrchestrationLatenciesV1 = z.infer<
+  typeof OrchestrationLatenciesV1Schema
+>;
+
+export const MessageRejectionV1Schema = z.object({
+  schema_version: z.literal("orchestrator_message_rejection_v1"),
+  phase: z.enum(["PROPOSAL", "VOTE", "ROUND"]),
+  reason_code: z.string(),
+  orchestrator_id: z.string().nullable(),
+  message_id: z.string().nullable(),
+  detail: z.string(),
+}).strict();
+export type MessageRejectionV1 = z.infer<typeof MessageRejectionV1Schema>;
+
+export const OrchestrationInstrumentationBoundsV1Schema = z.object({
+  latency_samples: z.number().int().min(1),
+  recent_rejections: z.number().int().min(1),
+}).strict();
+export type OrchestrationInstrumentationBoundsV1 = z.infer<
+  typeof OrchestrationInstrumentationBoundsV1Schema
+>;
+
+export const OrchestrationInstrumentationV1Schema = z.object({
+  counters: OrchestrationCountersV1Schema,
+  latencies: OrchestrationLatenciesV1Schema,
+  recent_rejections: z.array(MessageRejectionV1Schema),
+  bounds: OrchestrationInstrumentationBoundsV1Schema,
+}).strict();
+export type OrchestrationInstrumentationV1 = z.infer<
+  typeof OrchestrationInstrumentationV1Schema
+>;
+
+export const OrchestrationHealthV1Schema = z.object({
+  schema_version: z.literal("orchestration_health_v1"),
+  status: z.enum(["ok", "degraded", "offline"]),
+  orchestrators_available: z.number().int().min(0),
+  orchestrators_total: z.literal(3),
+  required_quorum: z.literal(2),
+  event_namespace: z.literal("orchestration-ops"),
+  decision_history_persistent: z.literal(false),
+  instrumentation: OrchestrationInstrumentationV1Schema,
+}).strict();
+export type OrchestrationHealthV1 = z.infer<typeof OrchestrationHealthV1Schema>;
+
+export const ProposalSummaryV1Schema = z.object({
+  orchestrator_id: z.string(),
+  message_id: z.string(),
+  proposed_route_id: z.string(),
+  proposal_digest: z.string(),
+  message_hash: z.string(),
+  authentication_verified: z.boolean(),
+  policy_id: z.string(),
+  policy_version: z.string(),
+  rationale_code: z.string(),
+  latency_ms: z.number().min(0),
+}).strict();
+export type ProposalSummaryV1 = z.infer<typeof ProposalSummaryV1Schema>;
+
+export const VoteSummaryV1Schema = z.object({
+  orchestrator_id: z.string(),
+  message_id: z.string(),
+  selected_proposal_digest: z.string(),
+  vote: VoteValueSchema,
+  message_hash: z.string(),
+  authentication_verified: z.boolean(),
+  reason_code: z.string(),
+  latency_ms: z.number().min(0),
+}).strict();
+export type VoteSummaryV1 = z.infer<typeof VoteSummaryV1Schema>;
+
+export const OrchestrationDecisionV1Schema = z.object({
+  schema_version: z.literal("orchestration_decision_v1"),
+  decision_id: z.string(),
+  request_id: z.string(),
+  request_version: z.number().int(),
+  round_id: z.string(),
+  request_digest: z.string(),
+  outcome: OrchestrationOutcomeSchema,
+  selected_route_id: z.string().nullable(),
+  selected_proposal_digest: z.string().nullable(),
+  required_quorum: z.literal(2),
+  proposal_summaries: z.array(ProposalSummaryV1Schema),
+  vote_summaries: z.array(VoteSummaryV1Schema),
+  rejections: z.array(MessageRejectionV1Schema),
+  supporting_orchestrators: z.array(z.string()),
+  disagreeing_orchestrators: z.array(z.string()),
+  timed_out_orchestrators: z.array(z.string()),
+  delayed_orchestrators: z.array(z.string()),
+  omitted_orchestrators: z.array(z.string()),
+  unavailable_orchestrators: z.array(z.string()),
+  quorum_formed: z.boolean(),
+  quorum_latency_ms: z.number().min(0).nullable(),
+  decision_latency_ms: z.number().min(0),
+  reason: z.string(),
+  logical_timestamp: z.string().nullable(),
+  window_id: z.number().int().min(0).nullable(),
+  completed_at_utc: z.string(),
+  provenance: RuntimeSafeOrchestrationRecordSchema,
+}).strict().superRefine((decision, context) => {
+  if (decision.outcome === "DECIDED") {
+    if (!decision.quorum_formed || !decision.selected_route_id) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "DECIDED requires backend quorum_formed and selected_route_id",
+      });
+    }
+    return;
+  }
+  if (decision.selected_route_id !== null || decision.selected_proposal_digest !== null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Non-decided outcomes cannot carry a selected route or proposal digest",
+    });
+  }
+});
+export type OrchestrationDecisionV1 = z.infer<
+  typeof OrchestrationDecisionV1Schema
+>;
+
+export const OrchestrationDecisionListingBoundsV1Schema = z.object({
+  history_limit: z.number().int().min(1),
+  max_page_limit: z.number().int().min(1),
+}).strict();
+export type OrchestrationDecisionListingBoundsV1 = z.infer<
+  typeof OrchestrationDecisionListingBoundsV1Schema
+>;
+
+export const OrchestrationDecisionListingV1Schema = z.object({
+  schema_version: z.literal("orchestration_decision_listing_v1"),
+  decisions: z.array(OrchestrationDecisionV1Schema),
+  total_retained: z.number().int().min(0),
+  limit: z.number().int().min(1),
+  offset: z.number().int().min(0),
+  history_complete: z.literal(false),
+  bounds: OrchestrationDecisionListingBoundsV1Schema,
+}).strict();
+export type OrchestrationDecisionListingV1 = z.infer<
+  typeof OrchestrationDecisionListingV1Schema
+>;
+
+// ─── Event registry ──────────────────────────────────────────────────────────
+
 export const EVENT_TYPE_VALUES = [
   "REPLAY_CREATED",
   "REPLAY_STARTED",
@@ -537,6 +830,180 @@ export const EventEnvelopeV1Schema = z.object({
   provenance: z.record(z.unknown()),
 });
 export type EventEnvelopeV1 = z.infer<typeof EventEnvelopeV1Schema>;
+
+// Stage-6 event projections contain summaries and backend-selected facts only;
+// authenticated message bodies and key material are not public transport.
+export const OrchestrationRequestReceivedPayloadV1Schema = z.object({
+  request_id: z.string(),
+  request_version: z.number().int(),
+  round_id: z.string(),
+  request_digest: z.string(),
+  candidate_route_ids: z.array(z.string()),
+  decision_kind: z.string(),
+  source_component: z.string(),
+  caller_principal: z.string(),
+}).strict();
+export type OrchestrationRequestReceivedPayloadV1 = z.infer<
+  typeof OrchestrationRequestReceivedPayloadV1Schema
+>;
+
+export const OrchestratorProposalEventPayloadV1Schema = ProposalSummaryV1Schema.extend({
+  request_id: z.string(),
+  round_id: z.string(),
+}).strict();
+export type OrchestratorProposalEventPayloadV1 = z.infer<
+  typeof OrchestratorProposalEventPayloadV1Schema
+>;
+
+export const OrchestratorVoteEventPayloadV1Schema = VoteSummaryV1Schema.extend({
+  request_id: z.string(),
+  round_id: z.string(),
+}).strict();
+export type OrchestratorVoteEventPayloadV1 = z.infer<
+  typeof OrchestratorVoteEventPayloadV1Schema
+>;
+
+export const OrchestratorTimeoutPayloadV1Schema = z.object({
+  request_id: z.string(),
+  round_id: z.string(),
+  orchestrator_id: z.string(),
+  phase: z.literal("ROUND"),
+  budget_ms: z.number().min(0),
+  reason: z.literal("NO_USABLE_RESPONSE_BEFORE_TERMINAL_ROUND"),
+}).strict();
+export type OrchestratorTimeoutPayloadV1 = z.infer<
+  typeof OrchestratorTimeoutPayloadV1Schema
+>;
+
+export const OrchestratorDelayedPayloadV1Schema = z.object({
+  request_id: z.string(),
+  round_id: z.string(),
+  orchestrator_id: z.string(),
+  phase: z.enum(["PROPOSAL", "VOTE"]),
+  reason: z.literal("ROUND_CLOSED_AFTER_QUORUM_BEFORE_RESPONSE"),
+}).strict();
+export type OrchestratorDelayedPayloadV1 = z.infer<
+  typeof OrchestratorDelayedPayloadV1Schema
+>;
+
+export const OrchestratorOmissionPayloadV1Schema = z.object({
+  request_id: z.string(),
+  round_id: z.string(),
+  orchestrator_id: z.string(),
+  phase: z.literal("ROUND"),
+  reason: z.literal("NO_MESSAGE_PRODUCED"),
+}).strict();
+export type OrchestratorOmissionPayloadV1 = z.infer<
+  typeof OrchestratorOmissionPayloadV1Schema
+>;
+
+export const OrchestratorStatusEventPayloadV1Schema = z.object({
+  request_id: z.string(),
+  round_id: z.string(),
+  orchestrator_id: z.string(),
+  health: z.literal("UNAVAILABLE"),
+  available: z.literal(false),
+  reason: z.literal("OPERATIONALLY_UNAVAILABLE"),
+}).strict();
+export type OrchestratorStatusEventPayloadV1 = z.infer<
+  typeof OrchestratorStatusEventPayloadV1Schema
+>;
+
+export const OrchestrationQuorumReachedPayloadV1Schema = z.object({
+  request_id: z.string(),
+  round_id: z.string(),
+  proposal_digest: z.string(),
+  supporting_orchestrators: z.array(z.string()),
+  required_quorum: z.literal(2),
+  quorum_latency_ms: z.number().min(0),
+}).strict();
+export type OrchestrationQuorumReachedPayloadV1 = z.infer<
+  typeof OrchestrationQuorumReachedPayloadV1Schema
+>;
+
+export const OrchestrationNoQuorumPayloadV1Schema = z.object({
+  request_id: z.string(),
+  round_id: z.string(),
+  outcome: z.enum([
+    "NO_QUORUM",
+    "TIMED_OUT",
+    "INSUFFICIENT_RESPONSES",
+    "REJECTED_REQUEST",
+  ]),
+  reason: z.string(),
+  required_quorum: z.literal(2),
+}).strict();
+export type OrchestrationNoQuorumPayloadV1 = z.infer<
+  typeof OrchestrationNoQuorumPayloadV1Schema
+>;
+
+export const OrchestrationEventPayloadSchemas = {
+  ORCHESTRATION_REQUEST_RECEIVED: OrchestrationRequestReceivedPayloadV1Schema,
+  ORCHESTRATOR_PROPOSAL: OrchestratorProposalEventPayloadV1Schema,
+  ORCHESTRATOR_VOTE: OrchestratorVoteEventPayloadV1Schema,
+  ORCHESTRATOR_TIMEOUT: OrchestratorTimeoutPayloadV1Schema,
+  ORCHESTRATOR_DELAYED: OrchestratorDelayedPayloadV1Schema,
+  ORCHESTRATOR_OMISSION: OrchestratorOmissionPayloadV1Schema,
+  ORCHESTRATOR_STATUS: OrchestratorStatusEventPayloadV1Schema,
+  ORCHESTRATION_QUORUM_REACHED: OrchestrationQuorumReachedPayloadV1Schema,
+  ORCHESTRATION_NO_QUORUM: OrchestrationNoQuorumPayloadV1Schema,
+  ORCHESTRATION_DECISION: OrchestrationDecisionV1Schema,
+} as const;
+export type OrchestrationEventType = keyof typeof OrchestrationEventPayloadSchemas;
+export type OrchestrationEventPayload = z.infer<
+  (typeof OrchestrationEventPayloadSchemas)[OrchestrationEventType]
+>;
+
+const OrchestrationEventBaseV1Schema = EventEnvelopeV1Schema.extend({
+  replay_id: z.literal("orchestration-ops"),
+  provenance: RuntimeSafeOrchestrationRecordSchema,
+});
+
+export const OrchestrationEventEnvelopeV1Schema = z.discriminatedUnion("event_type", [
+  OrchestrationEventBaseV1Schema.extend({
+    event_type: z.literal("ORCHESTRATION_REQUEST_RECEIVED"),
+    payload: OrchestrationRequestReceivedPayloadV1Schema,
+  }).strict(),
+  OrchestrationEventBaseV1Schema.extend({
+    event_type: z.literal("ORCHESTRATOR_PROPOSAL"),
+    payload: OrchestratorProposalEventPayloadV1Schema,
+  }).strict(),
+  OrchestrationEventBaseV1Schema.extend({
+    event_type: z.literal("ORCHESTRATOR_VOTE"),
+    payload: OrchestratorVoteEventPayloadV1Schema,
+  }).strict(),
+  OrchestrationEventBaseV1Schema.extend({
+    event_type: z.literal("ORCHESTRATOR_TIMEOUT"),
+    payload: OrchestratorTimeoutPayloadV1Schema,
+  }).strict(),
+  OrchestrationEventBaseV1Schema.extend({
+    event_type: z.literal("ORCHESTRATOR_DELAYED"),
+    payload: OrchestratorDelayedPayloadV1Schema,
+  }).strict(),
+  OrchestrationEventBaseV1Schema.extend({
+    event_type: z.literal("ORCHESTRATOR_OMISSION"),
+    payload: OrchestratorOmissionPayloadV1Schema,
+  }).strict(),
+  OrchestrationEventBaseV1Schema.extend({
+    event_type: z.literal("ORCHESTRATOR_STATUS"),
+    payload: OrchestratorStatusEventPayloadV1Schema,
+  }).strict(),
+  OrchestrationEventBaseV1Schema.extend({
+    event_type: z.literal("ORCHESTRATION_QUORUM_REACHED"),
+    payload: OrchestrationQuorumReachedPayloadV1Schema,
+  }).strict(),
+  OrchestrationEventBaseV1Schema.extend({
+    event_type: z.literal("ORCHESTRATION_NO_QUORUM"),
+    payload: OrchestrationNoQuorumPayloadV1Schema,
+  }).strict(),
+  OrchestrationEventBaseV1Schema.extend({
+    event_type: z.literal("ORCHESTRATION_DECISION"),
+    payload: OrchestrationDecisionV1Schema,
+  }).strict(),
+]);
+export type OrchestrationEventEnvelopeV1 = z.infer<
+  typeof OrchestrationEventEnvelopeV1Schema
+>;
 
 export function isEventEnvelope(raw: unknown): EventEnvelopeV1 | null {
   const r = EventEnvelopeV1Schema.safeParse(raw);

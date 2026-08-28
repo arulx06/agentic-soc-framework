@@ -172,10 +172,11 @@ events are rejected before sequence tracking.
 
 - Stage-3: Device Risk Graph, Communication Graph, device state, `SREP MODE: DEVICE_ONLY`, findings/provenance (see `docs/stage3b_react_dashboard.md`).
 - Stage-5: Quorum-replicated Blackboard explainability — health/snapshot, three replica cards, committed-record browser (paginated, filtered), record detail/version with provenance, bounded/truncated warnings, live BLACKBOARD_* activity in backend `sequence_number` order, operation trace grouped by backend `operation_id` (terminal only, never ACK-inferred), hash copy, NOT-BFT disclaimer. React never implements quorum — Python backend is authoritative.
+- Stage-7: Read-only orchestration explainability with three orchestrator operational cards, proposal/vote evidence, a paginated decision browser and detail panel, chronological `orchestration-ops` activity, disagreement/timeout/delay/omission/unavailability facts, backend quorum/final outcomes, operational latency, provenance, and explicit bounded-history warnings. Routes remain opaque and are not executed.
 
-The Blackboard view shares the existing single dashboard via `Device View | Blackboard` tabs; no raw `fetch()` escapes `ApiClient`; browser event history is bounded (`EVENT_BUFFER_LIMIT` 1500 + `LiveActivity` window 120).
+The views share one dashboard via `Device View | Blackboard | Orchestration` tabs. No raw `fetch()` escapes `ApiClient`; scientific and orchestration event histories use separate bounded sequence namespaces. React is explanatory only: Python owns orchestration quorum and final decisions.
 
-See `docs/stage3b_react_dashboard.md` and `docs/stage5_react_blackboard.md`.
+See `docs/stage3b_react_dashboard.md`, `docs/stage5_react_blackboard.md`, and `docs/stage7_react_orchestration.md`.
 
 ## Tests
 
@@ -194,8 +195,8 @@ cd frontend
 npm test
 ```
 
-Current verified totals are 482 Python tests and 161 frontend tests (Vitest,
-11 files; the Stage-6 frontend change is transport compatibility only). Suite
+Current verified totals are 482 Python tests and 251 frontend tests (Vitest,
+13 files, including 90 Stage-7/micro-closure tests). Suite
 layout, prerequisites, fixtures, temporary-file policy, and every test module's
 responsibility are documented in `tests.md`.
 
@@ -209,4 +210,5 @@ responsibility are documented in `tests.md`.
 - `docs/stage4a_blackboard_core.md` / `docs/stage4b_blackboard_integration.md`: replicated Blackboard substrate
 - `docs/stage5_react_blackboard.md`: Blackboard frontend visualization — authoritative boundary, endpoints/events, overview/replicas/records/trace, bounded views, NOT-BFT
 - `docs/stage6_orchestrator_quorum.md`: authenticated three-orchestrator two-of-three adjudication, REST/events, fault assumptions and boundaries
+- `docs/stage7_react_orchestration.md`: backend-authoritative React orchestration explainability, bounded live history, decision inspection, and stage boundaries
 - `tests.md`: complete automated-test catalog

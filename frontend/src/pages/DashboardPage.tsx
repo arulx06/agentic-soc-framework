@@ -15,6 +15,7 @@ import { SnapshotPanel } from "../components/snapshots/SnapshotPanel";
 import { ProvenancePanel } from "../components/provenance/ProvenancePanel";
 import { EventGapBanner } from "../components/common/EventGapBanner";
 import { BlackboardView } from "../components/blackboard/BlackboardView";
+import { OrchestrationView } from "../components/orchestration/OrchestrationView";
 
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8000/api/v1";
 
@@ -24,7 +25,7 @@ export function DashboardPage() {
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [recoveringReplay, setRecoveringReplay] = useState(true);
-  const [activeView, setActiveView] = useState<"device" | "blackboard">("device");
+  const [activeView, setActiveView] = useState<"device" | "blackboard" | "orchestration">("device");
   const snapshots = useSnapshots(client);
   const synchronizer = useReplayEvents(client, dispatch, state, WS_BASE);
 
@@ -124,6 +125,16 @@ export function DashboardPage() {
             >
               Blackboard
             </button>
+            <button
+              role="tab"
+              aria-selected={activeView === "orchestration"}
+              aria-controls="orchestration-view-panel"
+              className={activeView === "orchestration" ? "is-active" : ""}
+              onClick={() => setActiveView("orchestration")}
+              data-testid="nav-orchestration"
+            >
+              Orchestration
+            </button>
           </div>
         </nav>
 
@@ -172,6 +183,12 @@ export function DashboardPage() {
         {activeView === "blackboard" && (
           <div id="blackboard-view" role="tabpanel" aria-label="Blackboard">
             <BlackboardView client={client} />
+          </div>
+        )}
+
+        {activeView === "orchestration" && (
+          <div id="orchestration-view-panel" role="tabpanel" aria-label="Orchestration">
+            <OrchestrationView />
           </div>
         )}
       </main>

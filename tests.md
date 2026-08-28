@@ -36,8 +36,8 @@ npm test
 npm run build
 ```
 
-Current verified totals are recorded after the Stage-6 verification commands
-below. Historical Stage-5 results remain in their dedicated section.
+Current verified totals are recorded after the Stage-7 verification commands
+below. Historical Stage-5 and Stage-6 results remain in their dedicated sections.
 
 | Suite | Tests |
 |---|---:|
@@ -50,7 +50,9 @@ below. Historical Stage-5 results remain in their dedicated section.
 | Python combined (`python -m pytest tests -q`) | 482 |
 | Frontend Vitest — Stage-3 (prior) | 96 |
 | Frontend Vitest — Stage-5 Blackboard (new) | 64 |
-| Frontend Vitest combined (`cd frontend && npm test`) | 161 |
+| Frontend Vitest — Stage-6 transport compatibility | 1 |
+| Frontend Vitest — Stage-7 orchestration explainability and micro-closure (new) | 90 |
+| Frontend Vitest combined (`cd frontend && npm test`) | 251 |
 | Frontend type-check (`npm run type-check`) | 0 errors |
 | Frontend production build (`npm run build`) | ✓ |
 
@@ -242,12 +244,14 @@ Frontend tests live under `frontend/src/test` and run with Vitest/jsdom.
 | `graphModel.test.ts` | Validates graph conversion, topology identity, coordinates, filtering, and presentation metadata. |
 | `nodeModelRegistry.test.ts` | Validates 3D node model registry and material contracts (Stage-3D). |
 | `replayControlsHybrid.test.tsx` | Enforces lifecycle control availability, startup guards, terminal Create, pacing rules, and restart overrides. |
-| `replaySocket.test.ts` | Rejects foreign replay envelopes before sequence tracking and accepts Stage-6 transport events without classifying them as Blackboard. |
+| `replaySocket.test.ts` | Rejects foreign replay envelopes before sequence tracking, accepts Stage-6 transport events without classifying them as Blackboard, and proves the unchanged six-attempt backoff reports retry exhaustion exactly once. |
 | `replaySync.test.ts` | Covers bounded event history, gaps, namespace reset, startup lifecycle, and stale terminal-state rejection. |
 | `replaySynchronizer.test.ts` | Covers REST authority, active replay recovery, Create conflicts, startup races, coalescing, terminal convergence, and stale-request protection. |
 | `stage3b.test.tsx` | Exercises REST control contracts and core Stage 3B component behavior. |
 | `stage3b_corrective.test.ts` | Covers contract rejection, graph stability, search/neighborhood behavior, and corrective presentation rules. |
 | `blackboard.test.tsx` | Stage-5: API/types, overview (healthy/degraded/offline + N/A + NOT-BFT), replica cards (3×, HEALTHY/DIVERGED/UNAVAILABLE, PRESERVED_DIVERGENT_HEAD, no trust), record browser (pagination/filters/hash/author/null semantics), bounded view (complete/truncated, qualified vs authoritative totals + non-vacuous snapshot warning), write outcomes (COMMITTED/PARTIAL_COMMIT/FAILED_QUORUM/FAILED_STORAGE/STALE/CONFLICT), read outcomes (CONSISTENT/DEGRADED/INSUFFICIENT/INCONSISTENT/UNAVAILABLE), live events (sequence order + 13 BLACKBOARD_* shapes), operation trace (grouping by operation_id, backend terminal not ACK-count, two mandatory negative architecture tests), WebSocket disconnect/reconnecting/gap (genuine BlackboardView + real reducer/gapDetected, REST preserved, no fabricate), bounded-refresh regression (same-length replacement triggers refresh via sequence+event_id, duplicate no-loop) + dashboard regression (SREP DEVICE_ONLY / placeholder / nav tabs), ground-truth leakage, hash helpers and 30-value EventEnvelope acceptance (64 tests). |
+| `orchestrationContracts.test.ts` | Stage-7: exact outcome/vote/health enums and schema versions; health, replica, instrumentation, proposal/vote/rejection, decision/list and ten event contracts; nullable route invariants; malformed transport rejection; complete forbidden-key firewall; five GET-only client paths, filters and pagination; source checks excluding crypto, hash recomputation, browser quorum derivation, request authoring and route execution (65 tests). |
+| `orchestration.test.tsx` | Stage-7: overview and three actual orchestrator cards; all terminal outcomes and stale-route prevention; mandatory matching-votes/NO_QUORUM, matching-proposals/TIMED_OUT, QUORUM_REACHED-without-final and INSUFFICIENT_RESPONSES authority negatives; exact hash/auth/provenance evidence; B/A/C sequence chronology; distinct timeout/delay/omission/unavailable/disagreement/rejection; bounded REST/client history; mounted hook actual close/retry/reopen and exhaustion lifecycle, REST preservation/refresh, 500-event eviction, malformed-event rejection, namespace isolation and one-socket cleanup; Device/Blackboard/Orchestration navigation, replay controls, DEVICE_ONLY and disabled Agent Trust regression (24 tests). |
 
 `frontend/src/test/fixtures.ts` contains test-only contracts and snapshots;
 `frontend/src/test/setup.ts` installs shared jsdom matchers. Neither is a
@@ -304,6 +308,106 @@ npm run build
 The Stage-6 tests contain no vacuous `or True`, empty `any(...)`, or
 non-enforcing non-negative-count assertions. The frontend adds no Stage-7
 orchestration view; it only accepts the shared orchestration event values.
+
+### Stage-7 verification outputs (2026-08-28)
+
+```text
+# Focused unchanged Stage-6 backend
+python -m pytest tests/unit/orchestration -q -ra
+  -> 63 passed in 0.55s
+python -m pytest tests/integration/backend/orchestration -q -ra
+  -> 11 passed in 0.53s
+
+# Stage-4 Blackboard regressions
+python -m pytest tests/unit/blackboard -q -ra
+  -> 134 passed in 10.50s
+python -m pytest tests/integration/backend/blackboard -q -ra
+  -> 30 passed in 15.56s
+
+# Stage-3 API/event regression
+python -m pytest tests/integration/backend/api -q -ra
+  -> 66 passed in 99.15s
+
+# Full backend
+python -m pytest tests -q -ra
+  -> 482 passed in 170.37s
+
+# Stage-7 frontend and existing frontend regressions
+cd frontend
+npm test
+  -> 13 files passed; 248 tests passed (87 new Stage-7 tests)
+npm run type-check
+  -> 0 errors
+npm run build
+  -> 483 modules transformed; build succeeded
+```
+
+The final successful orchestration-unit command above followed two transient
+suite-level failures in the inherited 15 ms timeout test. That test passed in
+isolation, then the unchanged complete suite passed 63/63. No Stage-6 test,
+timeout, orchestration core, service, contract, endpoint, or quorum behavior was
+modified by Stage 7.
+
+Stage 7 is frontend-only. Its tests prove that React preserves backend terminal
+authority even when browser-visible votes or proposals appear to agree, keeps
+`orchestration-ops` independent from scientific replay sequences, bounds live
+event memory at 500, preserves retained REST state across disconnect/gap, and
+does not introduce Stage-8 execution or later-stage trust/recovery/attack UI.
+
+### Stage-7 final micro-closure outputs (2026-08-28)
+
+The scheduler-sensitive timeout test retained its exact assertions:
+`TIMED_OUT`, no selected route, and exactly `orchestrator_b` plus
+`orchestrator_c` in `timed_out_orchestrators`. Before correction it passed 10/10
+isolated-process characterization runs, while the two earlier suite-level
+failures above remained evidence that the 15 ms budget was not a deterministic
+executor/proposal/vote scheduling allowance. The test-only timing separation is
+now a 100 ms round deadline with the two intentional delays at 400 ms. No
+production coordinator, replica, hook, service, contract, endpoint, or quorum
+semantics changed.
+
+```text
+# Corrected single-test stability proof
+tests/unit/orchestration/test_quorum_timeouts.py::test_one_response_and_two_timeouts_has_no_decision
+  -> 20 consecutive isolated-process runs passed (20/20)
+
+# Stage-6 regressions
+python -m pytest tests/unit/orchestration -q -ra
+  -> 63 passed in 0.71s
+python -m pytest tests/integration/backend/orchestration -q -ra
+  -> 11 passed in 0.63s
+
+# Stage-4 regressions
+python -m pytest tests/unit/blackboard -q -ra
+  -> 134 passed in 11.37s
+python -m pytest tests/integration/backend/blackboard -q -ra
+  -> 30 passed in 17.19s
+
+# Stage-3 API/event regression
+python -m pytest tests/integration/backend/api -q -ra
+  -> 66 passed in 124.19s
+
+# Full backend
+python -m pytest tests -q -ra
+  -> 482 passed, 4 existing ResourceWarnings in 212.52s
+
+# Frontend
+cd frontend
+npm test
+  -> 13 files passed; 251 tests passed
+npm run type-check
+  -> 0 errors
+npm run build
+  -> 483 modules transformed; build succeeded
+```
+
+The micro-closure adds optional generic ReplaySocket lifecycle callbacks for a
+scheduled retry and exhausted retries. Existing callback objects remain valid.
+The retry owner, six-attempt bound, 1/2/4/8/10/10-second backoff, sequence/gap
+handling, terminal behavior, and user-close cleanup are unchanged. Mounted-hook
+tests now prove actual unexpected close -> scheduled timer -> replacement socket
+-> open -> REST refresh, state preservation with no synthetic events, and final
+`DISCONNECTED` only after exhaustion with no timer pending.
 
 ## Data And Artifact Prerequisites
 
