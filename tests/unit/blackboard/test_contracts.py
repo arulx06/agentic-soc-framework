@@ -20,7 +20,8 @@ from tests.unit.blackboard.helpers import draft
 
 class TestRegistry:
     def test_stage4a_registry_is_exactly_the_grounded_set(self):
-        assert {t.value for t in RECORD_TYPES} == {
+        # Stage-8B legitimately extends the registry additively; core types must remain
+        expected_core = {
             "NETWORK_FINDING_RECORD",
             "BEHAVIOR_FINDING_RECORD",
             "DEVICE_STATE_RECORD",
@@ -28,6 +29,19 @@ class TestRegistry:
             "DEVICE_ONLY_SREP_RECORD",
             "SYSTEM_RECORD",
         }
+        values = {t.value for t in RECORD_TYPES}
+        assert expected_core.issubset(values)
+        # Stage-8B five workflow types are exactly the additive set
+        expected_workflow = {
+            "THREAT_CORRELATION_RECORD",
+            "RISK_RECOMMENDATION_RECORD",
+            "ACCESS_RECOMMENDATION_RECORD",
+            "ENFORCEMENT_DECISION_RECORD",
+            "CONFIRMED_FEEDBACK_RECORD",
+        }
+        assert expected_workflow.issubset(values)
+        # No other unexpected types beyond known 11
+        assert values == expected_core | expected_workflow
 
     def test_future_categories_are_not_registered(self):
         names = {t.value for t in RECORD_TYPES}
@@ -39,6 +53,9 @@ class TestRegistry:
             "WATCHDOG",
             "RECOVERY",
             "ATTACK_INJECTION",
+            "AGENT_TRUST_RECORD",
+            "LZTAF_RECORD",
+            "CONSEQUENCE_RECORD",
         ):
             assert absent not in names
 

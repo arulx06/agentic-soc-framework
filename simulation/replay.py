@@ -119,6 +119,7 @@ class ReplayRunner:
         merge_fan_in: int = 8,
         tmp_dir: Path | None = None,
         session_trace: str | None = None,
+        workflow_callback=None,
     ):
         self.detector = detector
         self.profiler = profiler
@@ -132,6 +133,7 @@ class ReplayRunner:
         self._clock = clock
         self.session_trace = session_trace
         self.sort_chunk_rows = sort_chunk_rows
+        self.workflow_callback = workflow_callback
         self._own_tmp = tmp_dir is None
         self.tmp_dir = (
             Path(tmp_dir)
@@ -244,24 +246,102 @@ class ReplayRunner:
 
             context_active = any(r.get("behavior_observed") for r in beh_rows)
 
-            if self.detector is not None:
-                eligible = [r for r in net_rows if r.get("network_observed", False)]
-                if eligible:
-                    findings = self.detector.findings_from_records(
-                        eligible,
-                        source_mode=self.source_mode,
-                        session_trace=self.session_trace,
+            if self.workflow_callback is not None:
+                # Stage-8B orchestrated five-agent workflow is the single intended path
+                # It handles detector/profiler via agents, gateway, ABM propagate, downstream
+                # and emits its own events/snapshots. The callback returns accepted counts.
+                try:
+                    # Derive logical timestamp from first row or fallback
+                    logical_ts = None
+                    if net_rows:
+                        logical_ts = net_rows[0].get("window_start_utc")
+                    elif beh_rows:
+                        logical_ts = beh_rows[0].get("window_start_utc")
+                    c_accepted = self.workflow_callback(
+                        window_id=target,
+                        logical_timestamp=logical_ts,
+                        net_rows=net_rows,
+                        beh_rows=beh_rows,
+                        context_active=context_active,
+                        emit=emit,
                     )
-                    self.findings_network += len(findings)
-                    for finding in findings:
+                    if isinstance(c_accepted, dict):
+                        accepted["network"] += int(c_accepted.get("network", 0))
+                        accepted["behavior"] += int(c_accepted.get("behavior", 0))
+                        self.findings_network += int(c_accepted.get("findings_network", 0))
+                        self.findings_behavior_observed += int(c_accepted.get("behavior_observed", 0))
+                        self.findings_behavior_absence += int(c_accepted.get("behavior_absence", 0))
+                except Exception:
+                    # Workflow failures must not crash scientific replay
+                    pass
+                # Workflow callback already handled ABM current_window_id, propagate and record_step
+                # Ensure window bookkeeping still happens if callback didn't
+                if self.abm.current_window_id != target:
+                    self.abm.current_window_id = target
+                    try:
+                        self.abm.propagate()
+                    except Exception:
+                        pass
+                    self.abm.record_step()
+            else:
+                if self.detector is not None:
+                    eligible = [r for r in net_rows if r.get("network_observed", False)]
+                    if eligible:
+                        findings = self.detector.findings_from_records(
+                            eligible,
+                            source_mode=self.source_mode,
+                            session_trace=self.session_trace,
+                        )
+                        self.findings_network += len(findings)
+                        for finding in findings:
+                            emit(
+                                "NETWORK_FINDING",
+                                window_id=target,
+                                entity_id=finding.entity_id,
+                                payload={
+                                    "attack_probability": finding.attack_probability,
+                                    "predicted_class": finding.predicted_class,
+                                    "confidence": finding.confidence,
+                                    "timestamp_utc": finding.timestamp_utc,
+                                },
+                            )
+                            accepted_flag = self.gateway.submit(finding)
+                            emit(
+                                "GATEWAY_ACCEPTED" if accepted_flag else "GATEWAY_REJECTED",
+                                window_id=target,
+                                entity_id=finding.entity_id,
+                                payload={"evidence_kind": "network"},
+                            )
+                            if accepted_flag:
+                                accepted["network"] += 1
+
+                if self.profiler is not None:
+                    for row in beh_rows:
+                        finding = self.profiler.predict_record(
+                            row,
+                            source_mode=self.source_mode,
+                            telemetry_context_active=context_active,
+                            current_window_id=target,
+                            session_trace=self.session_trace,
+                        )
+                        if finding is None:
+                            continue
+                        is_absence = getattr(finding, "explanation", "").startswith(
+                            "unexpected_absence"
+                        )
+                        if is_absence:
+                            self.findings_behavior_absence += 1
+                        else:
+                            self.findings_behavior_observed += 1
                         emit(
-                            "NETWORK_FINDING",
+                            "BEHAVIOR_FINDING",
                             window_id=target,
                             entity_id=finding.entity_id,
                             payload={
-                                "attack_probability": finding.attack_probability,
-                                "predicted_class": finding.predicted_class,
+                                "deviation_score": finding.deviation_score,
+                                "profile_type": finding.profile_type,
                                 "confidence": finding.confidence,
+                                "explanation": finding.explanation,
                                 "timestamp_utc": finding.timestamp_utc,
                             },
                         )
@@ -270,54 +350,14 @@ class ReplayRunner:
                             "GATEWAY_ACCEPTED" if accepted_flag else "GATEWAY_REJECTED",
                             window_id=target,
                             entity_id=finding.entity_id,
-                            payload={"evidence_kind": "network"},
+                            payload={"evidence_kind": "behavior"},
                         )
                         if accepted_flag:
-                            accepted["network"] += 1
+                            accepted["behavior"] += 1
 
-            if self.profiler is not None:
-                for row in beh_rows:
-                    finding = self.profiler.predict_record(
-                        row,
-                        source_mode=self.source_mode,
-                        telemetry_context_active=context_active,
-                        current_window_id=target,
-                        session_trace=self.session_trace,
-                    )
-                    if finding is None:
-                        continue
-                    is_absence = getattr(finding, "explanation", "").startswith(
-                        "unexpected_absence"
-                    )
-                    if is_absence:
-                        self.findings_behavior_absence += 1
-                    else:
-                        self.findings_behavior_observed += 1
-                    emit(
-                        "BEHAVIOR_FINDING",
-                        window_id=target,
-                        entity_id=finding.entity_id,
-                        payload={
-                            "deviation_score": finding.deviation_score,
-                            "profile_type": finding.profile_type,
-                            "confidence": finding.confidence,
-                            "explanation": finding.explanation,
-                            "timestamp_utc": finding.timestamp_utc,
-                        },
-                    )
-                    accepted_flag = self.gateway.submit(finding)
-                    emit(
-                        "GATEWAY_ACCEPTED" if accepted_flag else "GATEWAY_REJECTED",
-                        window_id=target,
-                        entity_id=finding.entity_id,
-                        payload={"evidence_kind": "behavior"},
-                    )
-                    if accepted_flag:
-                        accepted["behavior"] += 1
-
-            self.abm.current_window_id = target
-            self.abm.propagate()
-            self.abm.record_step()
+                self.abm.current_window_id = target
+                self.abm.propagate()
+                self.abm.record_step()
             self.window_ids_seen += 1
             if self.min_processed_wid is None:
                 self.min_processed_wid = target

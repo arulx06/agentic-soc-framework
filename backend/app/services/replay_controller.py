@@ -101,6 +101,7 @@ class ReplayController:
         subscriber_queue_size: int = SUBSCRIBER_QUEUE_SIZE,
         sleeper=None,
         blackboard=None,
+        workflow=None,
     ):
         self.broker = broker or EventBroker(ring_size, subscriber_queue_size)
         self.catalog = catalog or SessionCatalog()
@@ -110,6 +111,7 @@ class ReplayController:
         self.blackboard = blackboard
         if self.blackboard is not None:
             self.blackboard.publisher = self._publish_blackboard_event
+        self.workflow = workflow
         self._operational_sequences = {
             BLACKBOARD_OPS_RUN_ID: 0,
             ORCHESTRATION_OPS_RUN_ID: 0,
@@ -435,6 +437,28 @@ class ReplayController:
                         pass
                     raise ReplayCancelledError("cancelled after runtime build")
                 run.runtime = runtime
+                # Stage-8B: attach orchestrated five-agent workflow as the single intended per-window path
+                if getattr(self, "workflow", None) is not None:
+                    def _wf_callback(window_id, logical_timestamp, net_rows, beh_rows, context_active, emit):
+                        try:
+                            return self.workflow.execute_window(
+                                replay_id=run.replay_id,
+                                window_id=window_id,
+                                logical_timestamp=logical_timestamp,
+                                net_rows=net_rows,
+                                beh_rows=beh_rows,
+                                abm=runtime.abm,
+                                gateway=runtime.gateway,
+                                detector=runtime.runner.detector,
+                                profiler=runtime.runner.profiler,
+                                inventory=runtime.inventory,
+                                session_trace=run.session_trace,
+                                source_mode=run.source_mode,
+                            )
+                        except Exception:
+                            return {"network": 0, "behavior": 0, "findings_network": 0, "behavior_observed": 0, "behavior_absence": 0}
+
+                    runtime.runner.workflow_callback = _wf_callback
 
             def sink(event_type: str, **data) -> None:
                 mapping = {

@@ -517,6 +517,81 @@ class BlackboardService:
             self.integration_errors += 1
 
     # ------------------------------------------------------------------
+    # Stage-8B workflow records (additive, quorum-backed, bounded keys)
+    # ------------------------------------------------------------------
+
+    def record_workflow_output(
+        self,
+        *,
+        replay_id: str,
+        window_id: int,
+        entity_id: str,
+        record_type: BlackboardRecordType,
+        payload: dict,
+        provenance: dict,
+        logical_timestamp: str | None,
+        author_id: str,
+        source_component: str,
+    ):
+        if not self.enabled:
+            return None
+        # Keys preserve replay isolation, no scenario/target data
+        prefix = {
+            BlackboardRecordType.THREAT_CORRELATION_RECORD: "workflow/threat",
+            BlackboardRecordType.RISK_RECOMMENDATION_RECORD: "workflow/risk",
+            BlackboardRecordType.ACCESS_RECOMMENDATION_RECORD: "workflow/access",
+            BlackboardRecordType.ENFORCEMENT_DECISION_RECORD: "workflow/action",
+            BlackboardRecordType.CONFIRMED_FEEDBACK_RECORD: "workflow/feedback",
+        }.get(record_type, "workflow/unknown")
+        if record_type == BlackboardRecordType.CONFIRMED_FEEDBACK_RECORD:
+            # payload contains feedback_id
+            fid = payload.get("feedback_id", entity_id)
+            key = f"{prefix}/{replay_id}/{fid}"
+        else:
+            key = f"{prefix}/{replay_id}/{window_id}/{entity_id}"
+        try:
+            return self._propose_next_version(
+                key=key,
+                record_type=record_type,
+                author_id=author_id,
+                source_component=source_component,
+                payload=payload,
+                provenance=provenance,
+                logical_timestamp=logical_timestamp,
+                window_id=window_id,
+                ctx={"replay_id": replay_id, "entity_id": entity_id},
+            )
+        except Exception:
+            self.integration_errors += 1
+            return None
+
+    def record_confirmed_feedback(
+        self,
+        *,
+        replay_id: str,
+        feedback,
+        principal: str = "feedback_principal",
+    ):
+        if not self.enabled:
+            return None
+        try:
+            payload = feedback.model_dump() if hasattr(feedback, "model_dump") else dict(feedback)
+            return self.record_workflow_output(
+                replay_id=replay_id,
+                window_id=int(getattr(feedback, "window_id", 0)),
+                entity_id=getattr(feedback, "entity_id", "unknown"),
+                record_type=BlackboardRecordType.CONFIRMED_FEEDBACK_RECORD,
+                payload=payload,
+                provenance=dict(getattr(feedback, "provenance", {})),
+                logical_timestamp=getattr(feedback, "submitted_at", None),
+                author_id=principal,
+                source_component="agentic_workflow.confirmed_feedback",
+            )
+        except Exception:
+            self.integration_errors += 1
+            return None
+
+    # ------------------------------------------------------------------
     # Reads (full Stage-4A discipline, with factual READ events)
     # ------------------------------------------------------------------
 

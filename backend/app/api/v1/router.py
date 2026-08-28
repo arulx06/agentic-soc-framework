@@ -12,6 +12,7 @@ from backend.app.api.v1.endpoints import (
     sessions,
     snapshots,
     srep,
+    workflow,
 )
 
 api_v1_router = APIRouter()
@@ -24,3 +25,4 @@ api_v1_router.include_router(snapshots.router, tags=["snapshots"])
 api_v1_router.include_router(events.router, tags=["events"])
 api_v1_router.include_router(blackboard.router, tags=["blackboard"])
 api_v1_router.include_router(orchestration.router, tags=["orchestration"])
+api_v1_router.include_router(workflow.router, tags=["workflow"])
