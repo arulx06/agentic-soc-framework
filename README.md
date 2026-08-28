@@ -37,11 +37,13 @@ DataSense PCAP + MQTT NDJSON
   -> bounded parsers and exact 5-second temporal alignment
   -> network, behaviour, and directed communication records
   -> versioned DataSense feature store
-  -> Network Detector + Behavioural Profiler
-  -> Findings -> FindingGateway
-  -> Device ABM + Device Risk Graph + Communication Graph
-  -> DEVICE_ONLY SREP
-  -> FastAPI REST/WebSocket
+  -> Network Detector + Behavioural Profiler (via five-agent adapters)
+  -> Findings -> FindingGateway -> Device ABM / Device Risk Graph
+  -> Threat Intelligence Correlator -> Risk Propagation Analyst
+     -> pre-LZTAF Trust & Access Controller -> ALLOW/MONITOR/BLOCK
+  -> replicated Blackboard (quorum-backed workflow records + confirmed feedback)
+  -> COMMUNICATION_GRAPH_SNAPSHOT / SREP (DEVICE_ONLY)
+  -> FastAPI REST/WebSocket (workflow/action/feedback + scientific events)
   -> React presentation state
 ```
 
@@ -58,6 +60,8 @@ SREP, or saved replay snapshots.
 - `srep/`: DEVICE_ONLY security-risk evaluation
 - `backend/app/`: FastAPI routes, contracts, controller, broker, snapshots
 - `orchestration/`: authenticated three-replica opaque-route adjudication core
+- `agentic_workflow/`: five-agent scientific core and live workflow — detectors, correlator, risk analyst, access controller, committer, Blackboard, orchestration dispatch
+- `backend/app/services/workflow_service.py`: per-window orchestrated five-agent execution, Blackboard persistence, workflow/action/feedback APIs, scientific event chronology
 - `frontend/`: React 18, TypeScript, Vite dashboard
 - `tests/`: organized Python unit, integration, regression, and real-data suites
 - `docs/`: scientific audits, methodology, FastAPI, and React documentation
@@ -147,6 +151,10 @@ Injection Engine. The three orchestrators are separate from Blackboard storage
 
 See `docs/stage6_orchestrator_quorum.md`.
 
+## Five-Agent Live Workflow (Stage 8)
+
+Stage 8 wires the five specialists through real Stage-6 quorum dispatch per window: `network_anomaly_detector`, `iot_behavioral_profiler`, `threat_intelligence_correlator`, `risk_propagation_analyst`, `trust_access_controller` (pre-LZTAF). Only ready routes become candidates; `DECIDED` with a registered route executes exactly one specialist, otherwise nothing (no fallback). Outputs are validated via `WorkflowOutputGateway` and quorum-committed to Blackboard (`THREAT_CORRELATION_RECORD`, `RISK_RECOMMENDATION_RECORD`, `ACCESS_RECOMMENDATION_RECORD`, `ENFORCEMENT_DECISION_RECORD`, `CONFIRMED_FEEDBACK_RECORD`), with `DEVICE_ONLY` SREP, `PRE_LZTAF_DEVICE_EVIDENCE` (`trust_vector_supported=False`), and `physical_enforcement_claimed=False` / `counterfactual_effect_applied=False`. Workflow/action/feedback REST and scientific `WORKFLOW_*`/`AGENT_*` events share the replay's `EventEnvelopeV1` sequence (`orchestration-ops` stays for explicit Stage-6 ops). See `docs/stage8_five_agent_workflow.md`.
+
 ## React Dashboard
 
 ```bash
@@ -176,7 +184,7 @@ events are rejected before sequence tracking.
 
 The views share one dashboard via `Device View | Blackboard | Orchestration` tabs. No raw `fetch()` escapes `ApiClient`; scientific and orchestration event histories use separate bounded sequence namespaces. React is explanatory only: Python owns orchestration quorum and final decisions.
 
-See `docs/stage3b_react_dashboard.md`, `docs/stage5_react_blackboard.md`, and `docs/stage7_react_orchestration.md`.
+See `docs/stage3b_react_dashboard.md`, `docs/stage5_react_blackboard.md`, `docs/stage7_react_orchestration.md`, `docs/stage8a_five_agent_core.md`, and `docs/stage8_five_agent_workflow.md`.
 
 ## Tests
 
@@ -195,8 +203,8 @@ cd frontend
 npm test
 ```
 
-Current verified totals are 482 Python tests and 251 frontend tests (Vitest,
-13 files, including 90 Stage-7/micro-closure tests). Suite
+Current verified totals are 580 Python tests and 251 frontend tests (Vitest,
+13 files, 76 agentic core/closure-boundary + 22 live workflow tests). Suite
 layout, prerequisites, fixtures, temporary-file policy, and every test module's
 responsibility are documented in `tests.md`.
 
@@ -211,4 +219,6 @@ responsibility are documented in `tests.md`.
 - `docs/stage5_react_blackboard.md`: Blackboard frontend visualization — authoritative boundary, endpoints/events, overview/replicas/records/trace, bounded views, NOT-BFT
 - `docs/stage6_orchestrator_quorum.md`: authenticated three-orchestrator two-of-three adjudication, REST/events, fault assumptions and boundaries
 - `docs/stage7_react_orchestration.md`: backend-authoritative React orchestration explainability, bounded live history, decision inspection, and stage boundaries
+- `docs/stage8a_five_agent_core.md`: pure five-agent contracts, adapters, policy, committer, hooks, firewall
+- `docs/stage8_five_agent_workflow.md`: live orchestrated workflow, Blackboard, action/feedback, events, lifecycle, smoke
 - `tests.md`: complete automated-test catalog

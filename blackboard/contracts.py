@@ -56,9 +56,8 @@ BLACKBOARD_READ_RESULT_SCHEMA_VERSION = "blackboard_read_result_v1"
 class BlackboardRecordType(str, enum.Enum):
     """Record categories grounded in existing backend capabilities.
 
-    Later stages (orchestration votes, trust decisions, watchdog state,
-    threat-intelligence correlation ...) may extend this registry
-    explicitly. They are deliberately absent here.
+    Stage 8B adds five workflow record types; agent-trust/L-ZTAF/watchdog
+    record types remain absent.
     """
 
     NETWORK_FINDING_RECORD = "NETWORK_FINDING_RECORD"
@@ -67,6 +66,11 @@ class BlackboardRecordType(str, enum.Enum):
     DEVICE_RISK_SNAPSHOT_RECORD = "DEVICE_RISK_SNAPSHOT_RECORD"
     DEVICE_ONLY_SREP_RECORD = "DEVICE_ONLY_SREP_RECORD"
     SYSTEM_RECORD = "SYSTEM_RECORD"
+    THREAT_CORRELATION_RECORD = "THREAT_CORRELATION_RECORD"
+    RISK_RECOMMENDATION_RECORD = "RISK_RECOMMENDATION_RECORD"
+    ACCESS_RECOMMENDATION_RECORD = "ACCESS_RECOMMENDATION_RECORD"
+    ENFORCEMENT_DECISION_RECORD = "ENFORCEMENT_DECISION_RECORD"
+    CONFIRMED_FEEDBACK_RECORD = "CONFIRMED_FEEDBACK_RECORD"
 
 
 RECORD_TYPES: frozenset[BlackboardRecordType] = frozenset(BlackboardRecordType)

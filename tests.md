@@ -36,8 +36,8 @@ npm test
 npm run build
 ```
 
-Current verified totals are recorded after the Stage-7 verification commands
-below. Historical Stage-5 and Stage-6 results remain in their dedicated sections.
+Current verified totals are recorded after the Stage-8B verification commands
+below. Historical Stage-5 through Stage-8A results remain in their dedicated sections.
 
 | Suite | Tests |
 |---|---:|
@@ -45,9 +45,11 @@ below. Historical Stage-5 and Stage-6 results remain in their dedicated sections
 | Python FastAPI | 66 |
 | Blackboard core (Stage-4A, `tests/unit/blackboard`) | 134 |
 | Blackboard integration (Stage-4B, `tests/integration/backend/blackboard`) | 30 |
+| Agentic workflow core and closure boundaries (`tests/unit/agentic_workflow`) | 76 |
+| Workflow live integration (Stage 8B, `tests/integration/backend/workflow`) | 22 |
 | Orchestration core (Stage 6, `tests/unit/orchestration`) | 63 |
 | Orchestration backend/API/events (Stage 6, `tests/integration/backend/orchestration`) | 11 |
-| Python combined (`python -m pytest tests -q`) | 482 |
+| Python combined (`python -m pytest tests -q`) | 580 |
 | Frontend Vitest — Stage-3 (prior) | 96 |
 | Frontend Vitest — Stage-5 Blackboard (new) | 64 |
 | Frontend Vitest — Stage-6 transport compatibility | 1 |
@@ -72,17 +74,20 @@ tests/
 │   ├── storage/                    feature store and bounded external sorting
 │   ├── modeling/                   profiler and split policy
 │   ├── runtime/                    Findings, replay control, ABM, SREP
-│   └── blackboard/                 Stage-4A replicated core (quorum, hashing,
+│   ├── blackboard/                 Stage-4A replicated core (quorum, hashing,
 │                                   versions, reads, persistence, hooks)
-│   └── orchestration/              Stage-6 contracts, HMAC, replicas, quorum,
+│   ├── orchestration/              Stage-6 contracts, HMAC, replicas, quorum,
 │                                   deadlines, concurrency, bounds
+│   └── agentic_workflow/           Stage-8A five-agent contracts, adapters,
+│                                   threat/risk/access, commit, hooks
 ├── integration/
 │   ├── extraction/                 complete extraction paths and cleanup
 │   ├── cli/                        command-line training safeguards
 │   ├── runtime/                    per-window backend runtime behavior
 │   ├── backend/api/                FastAPI contracts and replay lifecycle
-│   └── backend/blackboard/         Stage-4B Gateway→Blackboard→API/events
-│   └── backend/orchestration/      Stage-6 REST/events/WebSocket integration
+│   ├── backend/blackboard/         Stage-4B Gateway→Blackboard→API/events
+│   ├── backend/orchestration/      Stage-6 REST/events/WebSocket integration
+│   └── backend/workflow/           Stage-8B orchestrated five-agent, Blackboard, events, API
 ├── regression/pipeline/            closure and scientific equivalence
 └── real_data/                       bounded local DataSense validation
 ```
@@ -163,6 +168,23 @@ is `INSUFFICIENT_QUORUM` (never an authoritative record).
 | `test_bounded_history.py` | Capped operation/rejection/latency rings, counter accuracy, settings validation. |
 | `test_bounded_scan.py` | Explicit truncation/completeness flags for merged committed views under tiny configurable scan bounds. |
 | `test_listener_isolation.py` | Phase-listener/publisher failures cannot alter outcomes, quorum, PARTIAL_COMMIT or persistence; failures counted. |
+
+### Agentic Workflow Core (Stage 8A)
+
+Run with `python -m pytest tests/unit/agentic_workflow -q -ra`.
+
+| Module | Functionality |
+|---|---|
+| `test_contracts_firewall.py` | Versioned immutable contracts, schema validation, nested firewall, session_trace allowance. |
+| `test_registry.py` | Exact five identities, separation from orchestrators/replicas, fixed route registry, unknown rejection. |
+| `test_readiness.py` | DAG readiness: independent detectors, threat barrier, device-risk and recommendation gates. |
+| `test_network_behavior_adapters.py` | Detector/profiler reuse, scientific output equality, no double inference, missingness preservation. |
+| `test_threat_correlator.py` | MATCHED/UNMAPPED/UNSUPPORTED, firewall, determinism, session_trace not decoded. |
+| `test_risk_analyst.py` | Authoritative state consumption, no recompute, distinct risk fields, null preservation, trust flags. |
+| `test_access_controller.py` | ALLOW/MONITOR/BLOCK matrix, boundary thresholds, missing evidence conservatism, trust flags. |
+| `test_action_commit.py` | Exact action commit, no recalculation, idempotency, conflict/rejection, physical claims false, bounded ledger. |
+| `test_orchestration_port.py` | DECIDED+registered route executes one specialist; NO_QUORUM/TIMED_OUT/unknown -> no execution. |
+| `test_hooks_bounds.py` | Pass-through hooks, bounded instrumentation, no legacy/blackboard/orchestration coupling. |
 
 ### Orchestration Core (Stage 6)
 
@@ -408,6 +430,86 @@ handling, terminal behavior, and user-close cleanup are unchanged. Mounted-hook
 tests now prove actual unexpected close -> scheduled timer -> replacement socket
 -> open -> REST refresh, state preservation with no synthetic events, and final
 `DISCONNECTED` only after exhaustion with no timer pending.
+
+### Stage-8A verification outputs (2026-08-28)
+
+```text
+# Focused Stage 8A core
+python -m pytest tests/unit/agentic_workflow -q -ra
+  -> 70 passed
+
+# Focused Stage 6 unchanged
+python -m pytest tests/unit/orchestration -q -ra
+  -> 63 passed
+python -m pytest tests/integration/backend/orchestration -q -ra
+  -> 11 passed
+
+# Stage-4 regressions
+python -m pytest tests/unit/blackboard -q -ra
+  -> 134 passed
+python -m pytest tests/integration/backend/blackboard -q -ra
+  -> 30 passed
+
+# Stage-3 API/event regression
+python -m pytest tests/integration/backend/api -q -ra
+  -> 66 passed
+
+# Full backend
+python -m pytest tests -q -ra
+  -> 552 passed
+
+# Frontend unchanged (Stage 8A is core-only)
+cd frontend
+npm test
+  -> 13 files passed; 251 tests passed
+npm run type-check
+  -> 0 errors
+npm run build
+  -> 483 modules transformed; build succeeded
+```
+
+Stage 8A tests contain no vacuous `or True`, empty `any(...)`, or timing-dependent assertions. The five-agent core remains isolated from live replay, orchestration dispatch, Blackboard persistence, and React. No L-ZTAF, Agent Trust Graph, or attack engine is implemented.
+
+### Stage-8B verification outputs (2026-08-28)
+
+```text
+# Focused Stage 8A/B + Closure
+python -m pytest tests/unit/agentic_workflow -q
+  -> 76 passed
+python -m pytest tests/integration/backend/workflow -q
+  -> 22 passed (15 Stage-8B + 7 closure tests)
+
+# Focused Stage 6
+python -m pytest tests/unit/orchestration -q
+  -> 63 passed
+python -m pytest tests/integration/backend/orchestration -q
+  -> 11 passed
+
+# Stage-4 regressions
+python -m pytest tests/unit/blackboard -q
+  -> 134 passed
+python -m pytest tests/integration/backend/blackboard -q
+  -> 30 passed
+
+# Stage-3 API/event regression
+python -m pytest tests/integration/backend/api -q
+  -> 66 passed
+
+# Full backend
+python -m pytest tests -q
+  -> 580 passed
+
+# Frontend unchanged (Stage 8B adds only event enum transport)
+cd frontend
+npm test
+  -> 13 files passed; 251 tests passed
+npm run type-check
+  -> 0 errors
+npm run build
+  -> 483 modules transformed; build succeeded
+```
+
+Stage-8B integration tests prove orchestrated dispatch (ready routes, DECIDED→one specialist, no fallback, unknown/not-ready rejected), no double inference, FindingGateway authority, Blackboard quorum-backed workflow records (THREAT/RISK/ACCESS/ENFORCEMENT/FEEDBACK), E2E five-role, feedback, scientific event sequence (strictly increasing, same replay, authenticated proposal/vote facts, orchestration-ops isolated), replay lifecycle (no duplicate window, restart fresh), workflow snapshot and action APIs, SREP DEVICE_ONLY, pre-LZTAF, no Agent Trust/LZTAF/watchdog/attack/consequence, deterministic entity-isolated `ALLOW`/`BLOCK` chains, no empty-evidence entity fallback, bounded state, and feature-store/direct-raw workflow equivalence. The bounded feature-store smoke produced `ALLOW` and `MONITOR`; deterministic policy tests prove `BLOCK` at systemic risk 0.9.
 
 ## Data And Artifact Prerequisites
 

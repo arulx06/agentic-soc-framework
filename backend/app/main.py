@@ -24,6 +24,7 @@ from backend.app.services.replay_controller import ControllerError, ReplayContro
 from backend.app.services.blackboard_service import BlackboardService  # noqa: E402
 from backend.app.services.snapshot_store import SnapshotStore  # noqa: E402
 from backend.app.services.orchestration_service import OrchestrationService  # noqa: E402
+from backend.app.services.workflow_service import WorkflowService  # noqa: E402
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -70,11 +71,18 @@ blackboard_service = BlackboardService(
 controller = ReplayController(blackboard=blackboard_service)
 orchestration_service = OrchestrationService()
 orchestration_service.publisher = controller._publish_orchestration_event
+workflow_service = WorkflowService(
+    blackboard=blackboard_service,
+    orchestration=orchestration_service,
+    controller=controller,
+)
+controller.workflow = workflow_service
 snapshot_store = SnapshotStore()
 app.state.controller = controller
 app.state.snapshot_store = snapshot_store
 app.state.blackboard = blackboard_service
 app.state.orchestration = orchestration_service
+app.state.workflow = workflow_service
 
 
 @app.exception_handler(ControllerError)

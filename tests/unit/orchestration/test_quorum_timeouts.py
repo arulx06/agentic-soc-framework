@@ -84,10 +84,10 @@ def test_omission_is_distinct_from_timeout_and_unavailable(request_factory):
 def test_vote_phase_timeout_preserves_valid_proposal_evidence(request_factory):
     service = service_for(
         hooks={
-            "orchestrator_b": VoteDelayHooks(0.08),
-            "orchestrator_c": VoteDelayHooks(0.08),
+            "orchestrator_b": VoteDelayHooks(0.15),
+            "orchestrator_c": VoteDelayHooks(0.15),
         },
-        timeout=0.015,
+        timeout=0.05,
     )
     decision = service.adjudicate(request_factory(), principal="test-principal")
     assert decision.outcome is OrchestrationOutcome.TIMED_OUT
