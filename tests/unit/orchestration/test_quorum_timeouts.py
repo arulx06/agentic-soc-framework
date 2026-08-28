@@ -52,8 +52,10 @@ def test_three_way_split_has_no_fallback_route(request_factory):
 
 def test_one_response_and_two_timeouts_has_no_decision(request_factory):
     service = service_for(
-        hooks={"orchestrator_b": DelayHooks(0.08), "orchestrator_c": DelayHooks(0.08)},
-        timeout=0.015,
+        # Leave enough budget for the responsive replica's executor startup and
+        # proposal/vote phases while keeping the other two beyond the deadline.
+        hooks={"orchestrator_b": DelayHooks(0.4), "orchestrator_c": DelayHooks(0.4)},
+        timeout=0.1,
     )
     decision = service.adjudicate(request_factory(), principal="test-principal")
     assert decision.outcome is OrchestrationOutcome.TIMED_OUT

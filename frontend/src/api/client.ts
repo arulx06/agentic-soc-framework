@@ -16,6 +16,11 @@ import {
   DeviceStateListV1Schema,
   DeviceRiskGraphSnapshotV1Schema,
   HealthResponseSchema,
+  OrchestrationDecisionListingV1Schema,
+  OrchestrationDecisionV1Schema,
+  OrchestrationHealthV1Schema,
+  OrchestratorListingV1Schema,
+  OrchestratorStatusV1Schema,
   ReplicaStatusV1Schema,
   ReplayStatusV1Schema,
   ReplayCreateResponseSchema,
@@ -28,6 +33,7 @@ import {
   SessionListResponseSchema,
   SrepSnapshotV1Schema,
 } from "./contracts";
+import type { OrchestrationOutcome } from "./contracts";
 import {
   BackendConflictError,
   ContractValidationError,
@@ -302,6 +308,55 @@ export class ApiClient {
       "GET",
       `/blackboard/records/${encoded}/versions/${version}`,
       BlackboardReadResultV1Schema
+    );
+  }
+
+  // ─── Orchestration (Stage-6 read transport) ─────────────────────────────
+
+  getOrchestrationHealth() {
+    return this.request("GET", "/orchestration/health", OrchestrationHealthV1Schema);
+  }
+
+  getOrchestrationReplicas() {
+    return this.request(
+      "GET",
+      "/orchestration/replicas",
+      OrchestratorListingV1Schema
+    );
+  }
+
+  getOrchestrationReplica(orchestratorId: string) {
+    return this.request(
+      "GET",
+      `/orchestration/replicas/${encodeURIComponent(orchestratorId)}`,
+      OrchestratorStatusV1Schema
+    );
+  }
+
+  listOrchestrationDecisions(params?: {
+    outcome?: OrchestrationOutcome;
+    request_id?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const search = new URLSearchParams();
+    if (params?.outcome !== undefined) search.set("outcome", params.outcome);
+    if (params?.request_id !== undefined) search.set("request_id", params.request_id);
+    if (params?.limit !== undefined) search.set("limit", String(params.limit));
+    if (params?.offset !== undefined) search.set("offset", String(params.offset));
+    const qs = search.toString();
+    return this.request(
+      "GET",
+      `/orchestration/decisions${qs ? `?${qs}` : ""}`,
+      OrchestrationDecisionListingV1Schema
+    );
+  }
+
+  getOrchestrationDecision(decisionId: string) {
+    return this.request(
+      "GET",
+      `/orchestration/decisions/${encodeURIComponent(decisionId)}`,
+      OrchestrationDecisionV1Schema
     );
   }
 }

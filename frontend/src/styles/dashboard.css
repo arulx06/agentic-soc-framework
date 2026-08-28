@@ -313,3 +313,92 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
+
+/* Stage 7 orchestration is a dense read-only audit surface, not an action console. */
+.orchestration-view { display: grid; gap: 14px; animation: bbIn 120ms ease; }
+.orchestration-boundary {
+  position: relative;
+  padding: 18px 20px 17px 24px;
+  overflow: hidden;
+  background: linear-gradient(110deg, rgba(79, 143, 247, 0.13), rgba(20, 184, 166, 0.04) 58%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-cyan);
+}
+.orchestration-boundary::after { content: "2 / 3"; position: absolute; right: 18px; bottom: -18px; color: rgba(125, 211, 252, 0.06); font: 800 4.6rem var(--font-mono); pointer-events: none; }
+.orchestration-boundary h1 { margin: 0; font-size: clamp(1.05rem, 2.5vw, 1.42rem); letter-spacing: -0.01em; }
+.orchestration-boundary p { position: relative; z-index: 1; max-width: 900px; margin: 8px 0 0; color: var(--text-secondary); font-size: 0.76rem; line-height: 1.55; }
+.orchestration-notices { display: grid; gap: 8px; }
+.orchestration-notices .banner-warning { margin: 0; }
+.metric-grid--orchestration { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.orchestration-counter-grid { display: grid; grid-template-columns: repeat(4, minmax(115px, 1fr)); margin-top: 8px; border: 1px solid var(--border-subtle); }
+.orchestration-counter-grid > div { min-width: 0; padding: 9px; border-right: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); }
+.orchestration-counter-grid span { display: block; min-height: 26px; color: var(--text-muted); font-size: 0.64rem; line-height: 1.35; }
+.orchestration-counter-grid strong { color: var(--accent-cyan); font-size: 0.85rem; }
+.orchestration-section-heading { display: flex; align-items: end; justify-content: space-between; margin: 2px 0 8px; }
+.orchestration-section-heading h2 { margin: 0; font-size: 0.98rem; }
+.orchestrator-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.orchestrator-card header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 9px; border-bottom: 1px solid var(--border-subtle); }
+.orchestrator-card .metadata-list > div { grid-template-columns: minmax(115px, 1fr) minmax(0, 1fr); }
+.orchestration-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.orchestration-filters label { display: grid; gap: 5px; }
+.orchestration-filters label > span { color: var(--text-muted); font: 600 0.64rem var(--font-mono); text-transform: uppercase; }
+.orchestration-bounds { display: inline-block; margin-left: 6px; }
+.orchestration-bounds summary { cursor: pointer; }
+.orchestration-bounds code { display: block; margin-top: 6px; overflow-wrap: anywhere; }
+.orchestration-decision-table { max-height: 430px; }
+.orchestration-decision-table td { vertical-align: top; }
+.orchestration-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 9px; }
+.orchestration-digest { display: inline-flex; max-width: 100%; align-items: center; gap: 5px; vertical-align: middle; }
+.orchestration-digest__short { color: var(--text-secondary); font-size: 0.66rem; white-space: nowrap; }
+.orchestration-digest details { position: relative; }
+.orchestration-digest summary { color: var(--accent-cyan); cursor: pointer; font: 0.62rem var(--font-sans); }
+.orchestration-digest details[open] code { position: absolute; z-index: 10; top: calc(100% + 5px); right: 0; width: min(520px, 72vw); padding: 8px; overflow-wrap: anywhere; background: var(--bg-elevated); border: 1px solid var(--border-strong); box-shadow: var(--shadow); color: var(--text-primary); }
+.orchestration-digest__copy { height: 24px; padding: 0 6px; font-size: 0.6rem; }
+.orchestration-drawer { width: min(900px, 96vw); }
+.orchestration-terminal { display: grid; grid-template-columns: minmax(120px, 0.5fr) minmax(0, 1fr); gap: 8px 14px; margin-top: 14px; padding: 14px; background: var(--bg-primary); border-left: 3px solid var(--accent-blue); }
+.orchestration-terminal .eyebrow { grid-column: 1 / -1; }
+.orchestration-terminal > strong { font-size: 1rem; }
+.orchestration-terminal > span:not(.eyebrow) { color: var(--text-muted); font-size: 0.7rem; }
+.orchestration-terminal p { grid-column: 1 / -1; margin: 3px 0 0; color: var(--text-secondary); font-size: 0.72rem; }
+.orchestration-detail-section { margin-top: 18px; }
+.orchestration-detail-section h3 { margin: 0 0 8px; font-size: 0.8rem; }
+.orchestration-detail-section .bounded-table { max-height: 320px; }
+.participation-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--border-subtle); }
+.participation-grid > div { min-width: 0; padding: 9px; border-right: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); }
+.participation-grid span { display: block; margin-bottom: 4px; color: var(--text-muted); font-size: 0.64rem; }
+.participation-grid strong { overflow-wrap: anywhere; font-size: 0.68rem; }
+.orchestration-activity-table { max-height: 410px; }
+.orchestration-link-button { max-width: 220px; padding: 0; overflow: hidden; border: 0; background: transparent; color: var(--accent-cyan); cursor: pointer; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.orchestration-link-button:hover { text-decoration: underline; }
+.orchestration-trace { padding: 12px; background: var(--bg-primary); border-left: 2px solid var(--accent-blue); }
+.orchestration-trace ol { position: relative; display: grid; gap: 0; margin: 12px 0; padding: 0 0 0 18px; list-style: none; border-left: 1px solid var(--border-strong); }
+.orchestration-trace li { display: grid; grid-template-columns: 65px minmax(190px, 0.8fr) minmax(120px, 1fr) auto; align-items: center; gap: 10px; padding: 9px 0 9px 12px; border-bottom: 1px solid var(--border-subtle); font-size: 0.68rem; }
+.orchestration-trace li::before { content: ""; position: absolute; left: -4px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-blue); }
+.orchestration-trace details summary { color: var(--accent-cyan); cursor: pointer; }
+.orchestration-trace details[open] { grid-column: 1 / -1; }
+.orchestration-trace pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); }
+.orchestration-limitations { padding: 14px 16px; background: rgba(251, 191, 36, 0.04); border: 1px solid rgba(251, 191, 36, 0.2); color: var(--text-secondary); font-size: 0.7rem; line-height: 1.5; }
+.orchestration-limitations strong { color: #fde68a; }
+.orchestration-limitations p { margin: 6px 0 0; }
+
+@media (max-width: 980px) {
+  .orchestrator-grid { grid-template-columns: 1fr; }
+  .orchestration-counter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric-grid--orchestration { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .participation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 780px) {
+  .view-switch { overflow-x: auto; }
+  .view-switch .segmented-control { flex: 0 0 auto; }
+  .orchestration-boundary { padding: 15px; }
+  .orchestration-counter-grid, .metric-grid--orchestration, .participation-grid { grid-template-columns: 1fr; }
+  .orchestration-filters { display: grid; grid-template-columns: 1fr 1fr; }
+  .orchestration-filters label:nth-of-type(2) { grid-column: 1 / -1; }
+  .orchestration-filters label .control-input { width: 100%; }
+  .orchestration-pagination { align-items: flex-start; flex-direction: column; }
+  .orchestration-digest { flex-wrap: wrap; }
+  .orchestration-trace li { grid-template-columns: 52px minmax(0, 1fr); }
+  .orchestration-trace li > span:nth-of-type(2), .orchestration-trace li > details { grid-column: 1 / -1; }
+  .orchestration-terminal { grid-template-columns: 1fr; }
+  .orchestration-terminal p, .orchestration-terminal .eyebrow { grid-column: auto; }
+}

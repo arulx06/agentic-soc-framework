@@ -22,6 +22,8 @@ export interface ReplaySocketCallbacks {
   onOpen?: () => void;
   onClose?: (code: number) => void;
   onError?: (err: string) => void;
+  onReconnectScheduled?: (attempt: number, delayMs: number) => void;
+  onReconnectExhausted?: () => void;
 }
 
 const MAX_RECONNECT_ATTEMPTS = 6;
@@ -107,11 +109,7 @@ export class ReplaySocket {
     this.ws.onclose = (e) => {
       this.ws = null;
       this.callbacks.onClose?.(e.code);
-      if (
-        !this.closedByUser &&
-        !this.terminalSeen &&
-        this.reconnectAttempts < MAX_RECONNECT_ATTEMPTS
-      ) {
+      if (!this.closedByUser && !this.terminalSeen) {
         this.scheduleReconnect();
       }
     };
@@ -119,9 +117,13 @@ export class ReplaySocket {
 
   private scheduleReconnect(): void {
     if (this.closedByUser || this.terminalSeen) return;
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      this.callbacks.onReconnectExhausted?.();
+      return;
+    }
     this.reconnectAttempts++;
-    if (this.reconnectAttempts > MAX_RECONNECT_ATTEMPTS) return;
     const delay = Math.min(1000 * 2 ** (this.reconnectAttempts - 1), 10_000);
+    this.callbacks.onReconnectScheduled?.(this.reconnectAttempts, delay);
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       if (!this.closedByUser && !this.terminalSeen) {
