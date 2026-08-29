@@ -36,8 +36,8 @@ npm test
 npm run build
 ```
 
-Current verified totals are recorded after the Stage-8B verification commands
-below. Historical Stage-5 through Stage-8A results remain in their dedicated sections.
+Current verified totals are recorded after the Stage-9 final micro-closure verification
+below. Historical Stage-5 through Stage-9 results remain in their dedicated sections.
 
 | Suite | Tests |
 |---|---:|
@@ -54,7 +54,9 @@ below. Historical Stage-5 through Stage-8A results remain in their dedicated sec
 | Frontend Vitest — Stage-5 Blackboard (new) | 64 |
 | Frontend Vitest — Stage-6 transport compatibility | 1 |
 | Frontend Vitest — Stage-7 orchestration explainability and micro-closure (new) | 90 |
-| Frontend Vitest combined (`cd frontend && npm test`) | 251 |
+| Frontend Vitest — Stage-9 five-agent workflow + contracts (new) | 67 |
+| Frontend Vitest — Stage-9 final micro-closure (replay isolation / gateway authority / entity-window) (new) | 23 |
+| Frontend Vitest combined (`cd frontend && npm test`) | 341 |
 | Frontend type-check (`npm run type-check`) | 0 errors |
 | Frontend production build (`npm run build`) | ✓ |
 
@@ -510,6 +512,54 @@ npm run build
 ```
 
 Stage-8B integration tests prove orchestrated dispatch (ready routes, DECIDED→one specialist, no fallback, unknown/not-ready rejected), no double inference, FindingGateway authority, Blackboard quorum-backed workflow records (THREAT/RISK/ACCESS/ENFORCEMENT/FEEDBACK), E2E five-role, feedback, scientific event sequence (strictly increasing, same replay, authenticated proposal/vote facts, orchestration-ops isolated), replay lifecycle (no duplicate window, restart fresh), workflow snapshot and action APIs, SREP DEVICE_ONLY, pre-LZTAF, no Agent Trust/LZTAF/watchdog/attack/consequence, deterministic entity-isolated `ALLOW`/`BLOCK` chains, no empty-evidence entity fallback, bounded state, and feature-store/direct-raw workflow equivalence. The bounded feature-store smoke produced `ALLOW` and `MONITOR`; deterministic policy tests prove `BLOCK` at systemic risk 0.9.
+
+### Stage-9 verification outputs (2026-08-29)
+
+```text
+# Focused Stage 8A/B + Stage 6 + Stage 4 regressions (unchanged)
+python -m pytest tests/unit/agentic_workflow -q
+  -> 76 passed
+python -m pytest tests/integration/backend/workflow -q
+  -> 22 passed (15 Stage-8B + 7 closure)
+python -m pytest tests/unit/orchestration -q
+  -> 63 passed
+python -m pytest tests/integration/backend/orchestration -q
+  -> 11 passed
+python -m pytest tests/unit/blackboard -q
+  -> 134 passed
+python -m pytest tests/integration/backend/blackboard -q
+  -> 30 passed
+python -m pytest tests/integration/backend/api -q
+  -> 66 passed
+python -m pytest tests -q
+  -> 580 passed
+
+# Frontend Stage-9 (new) + inherited
+cd frontend
+npm test
+  -> 15 files passed; 318 tests passed (251 inherited + 67 Stage-9: 27 workflowContracts + 40 workflow)
+npm run type-check
+  -> 0 errors
+npm run build
+  -> 499 modules transformed; build succeeded
+```
+
+Stage-9 frontend tests prove strict `workflow_snapshot_v1` / `action_listing_v1` / `enforcement_decision_v1` parsing (enums ALLOW/MONITOR/BLOCK, PRE_LZTAF, nullable behavior, bounds, history_complete=false, malformed rejection, path/filter/pagination/header, X-Feedback-Principal), exactly five canonical IDs with no orchestrator/replica leakage, Network/Behavior Finding display (unsupported wording, null not 0), Gateway authority, threat MATCHED/UNMAPPED/UNSUPPORTED (no DDoS inference, catalog/rule/basis/provenance), risk display (no recompute), access PRE_LZTAF flags, recommended-vs-committed authority (BLOCK without decision → None, ALLOW vs MONITOR verbatim, high-risk without recommendation → no BLOCK, BLOCK shows recorded-only disclaimer), multi-entity isolation (entity_A 0.1 ALLOW / entity_B 0.9 BLOCK / entity_C MONITOR, isolated refs, reordering, no first-wins), workflow-authority (5 COMPLETED but FAILED snapshot, missing events but COMPLETED), orchestration trace (sequence_number order, NO_QUORUM no dispatch, backend decision over visible proposals), action browser (pagination/filter/bounded warning/detail isolation), confirmed feedback (explicit checkbox, audit principal, success/error, no mutation), bounded history (1500 cap), disconnect/gap (REST preserved, no fabricate, no second socket), ground-truth firewall (forbidden keys, session_trace opaque), future boundaries (no trust/credential/watchdog/consequence, SREP DEVICE_ONLY, placeholder disabled).
+
+### Stage-9 final micro-closure (2026-08-29)
+
+```text
+# Frontend micro-closure (replay isolation / gateway authority / entity-window)
+cd frontend
+npm test
+  -> 16 files passed; 341 tests passed (251 inherited + 67 Stage-9 + 23 micro-closure: 2 replay-switch + 2 immediate/all-state, 3 real view entity/window, 6 gateway (5 + multi), 1 per-agent dispatch, 5 nested ground-truth, 4 new render-bound/multi-gateway)
+npm run type-check
+  -> 0 errors
+npm run build
+  -> 499 modules transformed; build succeeded
+```
+
+Micro-closure proves stale-response isolation (delayed A after B still shows B, immediate render-bound clearing without awaiting Promise.resolve/waitFor, all replay-scoped state snapshot/listing/detail/feedback cleared before B resolves and late A cannot reappear), stale entity/window invalidation (real FiveAgentWorkflowView A→B only B retained, entity without risk resolves window 9 from access/action/threat via resolveEntityWindow helper, empty evidence → null entity/window), actual Gateway-event authority (Threat without GATEWAY_ACCEPTED → not present, GATEWAY_ACCEPTED without Threat → accepted, GATEWAY_REJECTED without reason → REJECTED with “—”, truncated/missing → unknown/not-present, never inferred from downstream, multi-gateway same entity/window with ACCEPTED network + REJECTED behavior both visible in sequence order 10→12 with no aggregate), per-agent dispatch wording (global dispatch + PENDING specialist must not imply dispatched — neutral wording), nested forbidden provenance (`provenance: {nested: {scenario_id}}` → Zod fails, `attack_category`/`filename`/`target` similarly, `session_trace` allowed).
 
 ## Data And Artifact Prerequisites
 

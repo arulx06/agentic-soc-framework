@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 import {
+  ActionListingV1Schema,
   ApiErrorV1Schema,
   BlackboardHealthV1Schema,
   BlackboardReadResultV1Schema,
@@ -13,8 +14,10 @@ import {
   BlackboardReplicasResponseSchema,
   BlackboardSnapshotV1Schema,
   CommunicationGraphSnapshotV1Schema,
+  ConfirmedFeedbackV1Schema,
   DeviceStateListV1Schema,
   DeviceRiskGraphSnapshotV1Schema,
+  EnforcementDecisionV1Schema,
   HealthResponseSchema,
   OrchestrationDecisionListingV1Schema,
   OrchestrationDecisionV1Schema,
@@ -32,6 +35,7 @@ import {
   SavedSnapshotMetaV1Schema,
   SessionListResponseSchema,
   SrepSnapshotV1Schema,
+  WorkflowSnapshotV1Schema,
 } from "./contracts";
 import type { OrchestrationOutcome } from "./contracts";
 import {
@@ -311,6 +315,71 @@ export class ApiClient {
     );
   }
 
+  // ─── Workflow (Stage-8 live five-agent) ──────────────────────────────────
+
+  getWorkflowSnapshot(replayId: string) {
+    return this.request(
+      "GET",
+      `/replays/${encodeURIComponent(replayId)}/workflow`,
+      WorkflowSnapshotV1Schema
+    );
+  }
+
+  listActions(
+    replayId: string,
+    params?: {
+      entity_id?: string;
+      action?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ) {
+    const search = new URLSearchParams();
+    if (params?.entity_id) search.set("entity_id", params.entity_id);
+    if (params?.action) search.set("action", params.action);
+    if (params?.limit !== undefined) search.set("limit", String(params.limit));
+    if (params?.offset !== undefined) search.set("offset", String(params.offset));
+    const qs = search.toString();
+    return this.request(
+      "GET",
+      `/replays/${encodeURIComponent(replayId)}/actions${qs ? `?${qs}` : ""}`,
+      ActionListingV1Schema
+    );
+  }
+
+  getAction(replayId: string, decisionId: string) {
+    return this.request(
+      "GET",
+      `/replays/${encodeURIComponent(replayId)}/actions/${encodeURIComponent(decisionId)}`,
+      EnforcementDecisionV1Schema
+    );
+  }
+
+  submitFeedback(
+    replayId: string,
+    body: {
+      window_id: number;
+      entity_id: string;
+      related_action_id: string;
+      related_finding_ids?: string[];
+      feedback_source: string;
+      confirmed: boolean;
+      verdict: string;
+      reason_code: string;
+      note?: string | null;
+      provenance?: Record<string, unknown>;
+    },
+    principal: string
+  ) {
+    return this.requestWithHeaders(
+      "POST",
+      `/replays/${encodeURIComponent(replayId)}/workflow/feedback`,
+      ConfirmedFeedbackV1Schema,
+      body,
+      { "X-Feedback-Principal": principal }
+    );
+  }
+
   // ─── Orchestration (Stage-6 read transport) ─────────────────────────────
 
   getOrchestrationHealth() {
@@ -358,6 +427,59 @@ export class ApiClient {
       `/orchestration/decisions/${encodeURIComponent(decisionId)}`,
       OrchestrationDecisionV1Schema
     );
+  }
+
+  private async requestWithHeaders<T>(
+    method: string,
+    path: string,
+    schema: z.ZodType<T>,
+    body: unknown,
+    extraHeaders: Record<string, string>
+  ): Promise<T> {
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          ...extraHeaders,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw new TransportError(
+        `Cannot reach backend at ${this.baseUrl}${path}. Is FastAPI running?`,
+        err
+      );
+    }
+
+    if (!res.ok) {
+      let code = "unknown";
+      let message = `HTTP ${res.status}`;
+      try {
+        const errBody = await res.json();
+        const parsed = ApiErrorV1Schema.safeParse(errBody);
+        if (parsed.success) {
+          code = parsed.data.error_code;
+          message = parsed.data.message;
+        } else {
+          message = errBody.detail ?? message;
+        }
+      } catch {
+        /* non-JSON error body */
+      }
+      if (res.status === 404) {
+        throw new BackendConflictError(404, "not_found", message);
+      }
+      throw new BackendConflictError(res.status, code, message);
+    }
+
+    const json = await res.json();
+    const result = schema.safeParse(json);
+    if (!result.success) {
+      throw new ContractValidationError(path, result.error.issues);
+    }
+    return result.data;
   }
 }
 
