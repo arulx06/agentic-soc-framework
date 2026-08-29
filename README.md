@@ -181,10 +181,11 @@ events are rejected before sequence tracking.
 - Stage-3: Device Risk Graph, Communication Graph, device state, `SREP MODE: DEVICE_ONLY`, findings/provenance (see `docs/stage3b_react_dashboard.md`).
 - Stage-5: Quorum-replicated Blackboard explainability — health/snapshot, three replica cards, committed-record browser (paginated, filtered), record detail/version with provenance, bounded/truncated warnings, live BLACKBOARD_* activity in backend `sequence_number` order, operation trace grouped by backend `operation_id` (terminal only, never ACK-inferred), hash copy, NOT-BFT disclaimer. React never implements quorum — Python backend is authoritative.
 - Stage-7: Read-only orchestration explainability with three orchestrator operational cards, proposal/vote evidence, a paginated decision browser and detail panel, chronological `orchestration-ops` activity, disagreement/timeout/delay/omission/unavailability facts, backend quorum/final outcomes, operational latency, provenance, and explicit bounded-history warnings. Routes remain opaque and are not executed.
+- Stage-9: Five-agent workflow explainability — entity-scoped specialist chain (Network/Behavior → Gateway → Threat Correlator → Risk Analyst → pre-LZTAF Trust & Access → ALLOW/MONITOR/BLOCK), Findings/Gateway, threat mappings (MATCHED/UNMAPPED/UNSUPPORTED), risk recommendations, pre-LZTAF access recommendations, **recommended vs committed action** distinction, ALLOW/MONITOR/BLOCK inspection (recorded replay decision only, `physical_enforcement_claimed=false`, `counterfactual_effect_applied=false`), bounded retained action browser, chronological workflow trace with real Stage-6 dispatch, and confirmed-feedback UI with explicit confirmation and audit principal. React displays backend `AccessRecommendation`/`EnforcementDecision`; it does not calculate policy, risk, or quorum. See `docs/stage9_react_five_agent_workflow.md`.
 
-The views share one dashboard via `Device View | Blackboard | Orchestration` tabs. No raw `fetch()` escapes `ApiClient`; scientific and orchestration event histories use separate bounded sequence namespaces. React is explanatory only: Python owns orchestration quorum and final decisions.
+The views share one dashboard via `Device View | Blackboard | Orchestration | Five-Agent Workflow` tabs. No raw `fetch()` escapes `ApiClient`; scientific and orchestration event histories use separate bounded sequence namespaces. React is explanatory only: Python owns orchestration quorum, workflow decisions, and final actions.
 
-See `docs/stage3b_react_dashboard.md`, `docs/stage5_react_blackboard.md`, `docs/stage7_react_orchestration.md`, `docs/stage8a_five_agent_core.md`, and `docs/stage8_five_agent_workflow.md`.
+See `docs/stage3b_react_dashboard.md`, `docs/stage5_react_blackboard.md`, `docs/stage7_react_orchestration.md`, `docs/stage8a_five_agent_core.md`, `docs/stage8_five_agent_workflow.md`, and `docs/stage9_react_five_agent_workflow.md`.
 
 ## Tests
 
@@ -203,8 +204,8 @@ cd frontend
 npm test
 ```
 
-Current verified totals are 580 Python tests and 251 frontend tests (Vitest,
-13 files, 76 agentic core/closure-boundary + 22 live workflow tests). Suite
+Current verified totals are 580 Python tests and 341 frontend tests (Vitest,
+16 files, 76 agentic core/closure-boundary + 22 live workflow + 67 Stage-9 workflow + 23 micro-closure). Suite
 layout, prerequisites, fixtures, temporary-file policy, and every test module's
 responsibility are documented in `tests.md`.
 

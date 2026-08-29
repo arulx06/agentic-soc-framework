@@ -1018,6 +1018,276 @@ export type OrchestrationEventEnvelopeV1 = z.infer<
   typeof OrchestrationEventEnvelopeV1Schema
 >;
 
+// ─── Workflow contracts (Stage-8 live five-agent workflow) ─────────────────
+
+export const AGENT_IDS = [
+  "network_anomaly_detector",
+  "iot_behavioral_profiler",
+  "threat_intelligence_correlator",
+  "risk_propagation_analyst",
+  "trust_access_controller",
+] as const;
+export type AgentId = (typeof AGENT_IDS)[number];
+
+export const AGENT_DISPLAY_LABELS: Record<AgentId, string> = {
+  network_anomaly_detector: "Network / Anomaly Detector",
+  iot_behavioral_profiler: "IoT Behavioural Profiler",
+  threat_intelligence_correlator: "Threat Intelligence Correlator",
+  risk_propagation_analyst: "Risk Propagation Analyst",
+  trust_access_controller: "Trust & Access Controller",
+};
+
+export const ACTION_TYPES = ["ALLOW", "MONITOR", "BLOCK"] as const;
+export type ActionType = (typeof ACTION_TYPES)[number];
+export const ActionTypeSchema = z.enum(ACTION_TYPES);
+
+export const MAPPING_STATUSES = ["MATCHED", "UNMAPPED", "UNSUPPORTED"] as const;
+export type MappingStatus = (typeof MAPPING_STATUSES)[number];
+export const MappingStatusSchema = z.enum(MAPPING_STATUSES);
+
+export const CONTROLLER_MODES = ["PRE_LZTAF_DEVICE_EVIDENCE"] as const;
+export type ControllerMode = (typeof CONTROLLER_MODES)[number];
+
+export const WORKFLOW_FORBIDDEN_KEYS = [
+  "label",
+  "label1",
+  "label2",
+  "label3",
+  "label4",
+  "label_full",
+  "is_attack",
+  "attack",
+  "attack_category",
+  "attack_name",
+  "attack_names",
+  "target",
+  "targets",
+  "target_device",
+  "whole_network_target",
+  "ground_truth",
+  "scenario_id",
+  "scenario_name",
+  "scenario_ids",
+  "scenario_names",
+  "filename",
+] as const;
+
+const workflowForbiddenKeySet = new Set<string>(WORKFLOW_FORBIDDEN_KEYS.map((k) => k.toLowerCase()));
+
+export function hasForbiddenWorkflowKey(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasForbiddenWorkflowKey);
+  if (value === null || typeof value !== "object") return false;
+  return Object.entries(value as Record<string, unknown>).some(
+    ([key, nested]) =>
+      workflowForbiddenKeySet.has(key.trim().toLowerCase()) ||
+      hasForbiddenWorkflowKey(nested)
+  );
+}
+
+const RuntimeSafeWorkflowRecordSchema = z.record(z.unknown()).superRefine((value, context) => {
+  if (hasForbiddenWorkflowKey(value)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Forbidden evaluation metadata is not valid workflow transport",
+    });
+  }
+});
+
+export const WorkflowWindowStateV1Schema = z.object({
+  window_id: z.number().int().min(0),
+  entity_id: z.string(),
+  entity_ids: z.array(z.string()).optional(),
+  status: z.string(),
+  dispatch_ids: z.array(z.string()),
+  execution_ids: z.array(z.string()),
+}).passthrough();
+export type WorkflowWindowStateV1 = z.infer<typeof WorkflowWindowStateV1Schema>;
+
+export const AgentStatusV1Schema = z.object({
+  agent_id: z.string(),
+  status: z.string(),
+}).passthrough();
+export type AgentStatusV1 = z.infer<typeof AgentStatusV1Schema>;
+
+export const ThreatCorrelationV1Schema = z.object({
+  schema_version: z.literal("threat_correlation_v1"),
+  correlation_id: z.string(),
+  workflow_id: z.string(),
+  entity_id: z.string(),
+  window_id: z.number().int().min(0),
+  logical_timestamp: z.string(),
+  source_finding_ids: z.array(z.string()),
+  mapping_status: MappingStatusSchema,
+  threat_behavior_id: z.string().nullable().optional(),
+  threat_behavior_name: z.string().nullable().optional(),
+  mapping_catalog_version: z.string(),
+  mapping_rule_id: z.string().nullable().optional(),
+  mapping_basis: z.string().nullable().optional(),
+  evidence_refs: z.array(z.string()),
+  confidence: z.number().min(0).max(1).nullable().optional(),
+  provenance: RuntimeSafeWorkflowRecordSchema,
+}).passthrough();
+export type ThreatCorrelationV1 = z.infer<typeof ThreatCorrelationV1Schema>;
+
+export const RiskRecommendationV1Schema = z.object({
+  schema_version: z.literal("risk_recommendation_v1"),
+  recommendation_id: z.string(),
+  workflow_id: z.string(),
+  entity_id: z.string(),
+  window_id: z.number().int().min(0),
+  logical_timestamp: z.string(),
+  network_risk: z.number().min(0).max(1).nullable().optional(),
+  behavior_risk: z.number().min(0).max(1).nullable().optional(),
+  behavior_supported: z.boolean(),
+  direct_risk: z.number().min(0).max(1).nullable().optional(),
+  propagated_risk: z.number().min(0).max(1),
+  systemic_risk: z.number().min(0).max(1),
+  threat_correlation_refs: z.array(z.string()),
+  evidence_complete: z.boolean(),
+  reason_codes: z.array(z.string()),
+  recommended_escalation: z.string(),
+  agent_trust_graph_supported: z.literal(false),
+  agent_workflow_risk_supported: z.literal(false),
+  device_risk_supported: z.literal(true),
+  provenance: RuntimeSafeWorkflowRecordSchema,
+  source_component: z.string().optional(),
+}).passthrough();
+export type RiskRecommendationV1 = z.infer<typeof RiskRecommendationV1Schema>;
+
+export const AccessRecommendationV1Schema = z.object({
+  schema_version: z.literal("access_recommendation_v1"),
+  recommendation_id: z.string(),
+  workflow_id: z.string(),
+  entity_id: z.string(),
+  window_id: z.number().int().min(0),
+  logical_timestamp: z.string(),
+  action: ActionTypeSchema,
+  policy_id: z.string(),
+  policy_version: z.string(),
+  controller_mode: z.enum(CONTROLLER_MODES),
+  evidence_refs: z.array(z.string()),
+  evidence_complete: z.boolean(),
+  behavior_supported: z.boolean(),
+  reason_codes: z.array(z.string()),
+  trust_vector_supported: z.literal(false),
+  agent_trust_supported: z.literal(false),
+  credential_controls_supported: z.literal(false),
+  provenance: RuntimeSafeWorkflowRecordSchema,
+  source_component: z.string().optional(),
+}).passthrough();
+export type AccessRecommendationV1 = z.infer<typeof AccessRecommendationV1Schema>;
+
+export const EnforcementDecisionV1Schema = z.object({
+  schema_version: z.literal("enforcement_decision_v1"),
+  decision_id: z.string(),
+  workflow_id: z.string(),
+  replay_id: z.string(),
+  window_id: z.number().int().min(0),
+  logical_timestamp: z.string(),
+  entity_id: z.string(),
+  action: ActionTypeSchema,
+  controller_recommendation_id: z.string(),
+  controller_mode: z.enum(CONTROLLER_MODES),
+  policy_id: z.string(),
+  policy_version: z.string(),
+  evidence_refs: z.array(z.string()),
+  reason_codes: z.array(z.string()),
+  evidence_complete: z.boolean(),
+  behavior_supported: z.boolean(),
+  source_agent: z.string().optional(),
+  source_component: z.string().optional(),
+  physical_enforcement_claimed: z.literal(false),
+  counterfactual_effect_applied: z.literal(false),
+  provenance: RuntimeSafeWorkflowRecordSchema,
+}).passthrough();
+export type EnforcementDecisionV1 = z.infer<typeof EnforcementDecisionV1Schema>;
+
+export const ConfirmedFeedbackV1Schema = z.object({
+  schema_version: z.literal("confirmed_feedback_v1"),
+  feedback_id: z.string(),
+  replay_id: z.string(),
+  window_id: z.number().int().min(0),
+  entity_id: z.string(),
+  related_action_id: z.string(),
+  related_finding_ids: z.array(z.string()),
+  feedback_source: z.string(),
+  confirmed: z.literal(true),
+  verdict: z.string(),
+  reason_code: z.string(),
+  note: z.string().nullable().optional(),
+  submitted_at: z.string(),
+  provenance: RuntimeSafeWorkflowRecordSchema,
+  source_component: z.string().optional(),
+}).passthrough();
+export type ConfirmedFeedbackV1 = z.infer<typeof ConfirmedFeedbackV1Schema>;
+
+export const WorkflowSnapshotV1Schema = z.object({
+  schema_version: z.literal("workflow_snapshot_v1"),
+  replay_id: z.string(),
+  workflow_mode: z.literal("FIVE_AGENT_LIVE"),
+  workflow_id: z.string(),
+  current_window_id: z.number().int().min(0).nullable().optional(),
+  last_window_id: z.number().int().min(0).nullable().optional(),
+  recent_windows: z.array(WorkflowWindowStateV1Schema),
+  five_agent_statuses: z.array(AgentStatusV1Schema),
+  latest_threat_correlations: z.array(ThreatCorrelationV1Schema),
+  latest_risk_recommendations: z.array(RiskRecommendationV1Schema),
+  latest_access_recommendations: z.array(AccessRecommendationV1Schema),
+  latest_enforcement_decisions: z.array(EnforcementDecisionV1Schema),
+  recent_failures: z.array(RuntimeSafeWorkflowRecordSchema),
+  bounds: RuntimeSafeWorkflowRecordSchema,
+  instrumentation: RuntimeSafeWorkflowRecordSchema,
+  provenance: RuntimeSafeWorkflowRecordSchema,
+}).passthrough();
+export type WorkflowSnapshotV1 = z.infer<typeof WorkflowSnapshotV1Schema>;
+
+export const ActionListingV1Schema = z.object({
+  schema_version: z.literal("action_listing_v1"),
+  replay_id: z.string(),
+  actions: z.array(EnforcementDecisionV1Schema),
+  total: z.number().int().min(0),
+  limit: z.number().int().min(1),
+  offset: z.number().int().min(0),
+  history_complete: z.literal(false),
+  bounds: RuntimeSafeWorkflowRecordSchema,
+}).passthrough();
+export type ActionListingV1 = z.infer<typeof ActionListingV1Schema>;
+
+export const FeedbackRequestV1Schema = z.object({
+  window_id: z.number().int().min(0),
+  entity_id: z.string().min(1).max(128),
+  related_action_id: z.string().min(1).max(128),
+  related_finding_ids: z.array(z.string()).default([]),
+  feedback_source: z.string().min(1).max(64),
+  confirmed: z.boolean(),
+  verdict: z.string().min(1).max(32),
+  reason_code: z.string().min(1).max(64),
+  note: z.string().max(512).nullable().optional(),
+  provenance: RuntimeSafeWorkflowRecordSchema.optional(),
+}).passthrough();
+export type FeedbackRequestV1 = z.infer<typeof FeedbackRequestV1Schema>;
+
+// Workflow-specific event types (subset of global EVENT_TYPE_VALUES)
+export const WORKFLOW_EVENT_TYPES: ReadonlySet<EventTypeValue> = new Set<EventTypeValue>([
+  "WORKFLOW_WINDOW_STARTED",
+  "AGENT_DISPATCHED",
+  "AGENT_EXECUTION_STARTED",
+  "AGENT_EXECUTION_COMPLETED",
+  "AGENT_EXECUTION_FAILED",
+  "AGENT_EXECUTION_SKIPPED",
+  "THREAT_CORRELATION_PRODUCED",
+  "RISK_RECOMMENDATION_PRODUCED",
+  "ACCESS_RECOMMENDATION_PRODUCED",
+  "ENFORCEMENT_DECISION_COMMITTED",
+  "CONFIRMED_FEEDBACK_RECORDED",
+  "WORKFLOW_WINDOW_COMPLETED",
+  "WORKFLOW_WINDOW_FAILED",
+]);
+
+export function isWorkflowEvent(envelope: EventEnvelopeV1): boolean {
+  return WORKFLOW_EVENT_TYPES.has(envelope.event_type as EventTypeValue);
+}
+
 export function isEventEnvelope(raw: unknown): EventEnvelopeV1 | null {
   const r = EventEnvelopeV1Schema.safeParse(raw);
   return r.success ? r.data : null;

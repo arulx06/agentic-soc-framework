@@ -16,6 +16,7 @@ import { ProvenancePanel } from "../components/provenance/ProvenancePanel";
 import { EventGapBanner } from "../components/common/EventGapBanner";
 import { BlackboardView } from "../components/blackboard/BlackboardView";
 import { OrchestrationView } from "../components/orchestration/OrchestrationView";
+import { FiveAgentWorkflowView } from "../components/workflow/FiveAgentWorkflowView";
 
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8000/api/v1";
 
@@ -25,7 +26,7 @@ export function DashboardPage() {
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [recoveringReplay, setRecoveringReplay] = useState(true);
-  const [activeView, setActiveView] = useState<"device" | "blackboard" | "orchestration">("device");
+  const [activeView, setActiveView] = useState<"device" | "blackboard" | "orchestration" | "workflow">("device");
   const snapshots = useSnapshots(client);
   const synchronizer = useReplayEvents(client, dispatch, state, WS_BASE);
 
@@ -135,6 +136,16 @@ export function DashboardPage() {
             >
               Orchestration
             </button>
+            <button
+              role="tab"
+              aria-selected={activeView === "workflow"}
+              aria-controls="workflow-view-panel"
+              className={activeView === "workflow" ? "is-active" : ""}
+              onClick={() => setActiveView("workflow")}
+              data-testid="nav-workflow"
+            >
+              Five-Agent Workflow
+            </button>
           </div>
         </nav>
 
@@ -189,6 +200,12 @@ export function DashboardPage() {
         {activeView === "orchestration" && (
           <div id="orchestration-view-panel" role="tabpanel" aria-label="Orchestration">
             <OrchestrationView />
+          </div>
+        )}
+
+        {activeView === "workflow" && (
+          <div id="workflow-view-panel" role="tabpanel" aria-label="Five-Agent Workflow">
+            <FiveAgentWorkflowView />
           </div>
         )}
       </main>
