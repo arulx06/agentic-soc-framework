@@ -59,16 +59,16 @@ def test_unsupported_schema_version_rejected():
 def test_device_state_null_vs_zero_survives_roundtrip():
     st = DeviceStateV1(
         replay_id="r", entity_id="router",
-        behavior_supported=False, behavior_observed=False, behavior_risk=None,
+        behavior_supported=False, behavior_observed=False, propagated_risk=None,
     )
     dumped = st.model_dump()
-    assert dumped["behavior_risk"] is None
+    assert dumped["propagated_risk"] is None
     reloaded = DeviceStateV1.model_validate(dumped)
-    assert reloaded.behavior_risk is None
-    assert reloaded.model_dump()["behavior_risk"] is None
+    assert reloaded.propagated_risk is None
+    assert reloaded.model_dump()["propagated_risk"] is None
 
-    zero = DeviceStateV1.model_validate({**dumped, "behavior_supported": True, "behavior_risk": 0.0})
-    assert zero.behavior_risk == 0.0
+    zero = DeviceStateV1.model_validate({**dumped, "propagated_risk": 0.0})
+    assert zero.propagated_risk == 0.0
 
 
 def test_graph_and_srep_contract_validation():

@@ -324,8 +324,8 @@ class TestLeakageAndChronologyOnLiveRun:
     def test_observation_semantics_preserved_in_device_state_records(
         self, noninterference_runs
     ):
-        """behavior_supported=False stays paired with behavior_risk=None on
-        the Blackboard — never coerced to zero."""
+        """Device state records no longer expose beh/net/systemic risks;
+        propagated_risk remains and behavior_supported is preserved."""
         svc = noninterference_runs["service"]
         listing = svc.list_records(
             record_type="DEVICE_STATE_RECORD",
@@ -338,10 +338,11 @@ class TestLeakageAndChronologyOnLiveRun:
             result = svc.read_latest(item["record_key"], principal="audit-reader")
             assert result.outcome.value in ("CONSISTENT", "DEGRADED_CONSISTENT")
             payload = result.record.payload
-            if payload["behavior_supported"] is False:
-                assert payload["behavior_risk"] is None, (
-                    "unsupported behaviour must keep risk=None, not 0"
-                )
+            assert "behavior_risk" not in payload, "behavior_risk should have been removed"
+            assert "network_risk" not in payload, "network_risk should have been removed"
+            assert "systemic_risk" not in payload, "systemic_risk should have been removed"
+            assert "propagated_risk" in payload
+            assert "behavior_supported" in payload
             checked += 1
         assert checked >= 5
 
