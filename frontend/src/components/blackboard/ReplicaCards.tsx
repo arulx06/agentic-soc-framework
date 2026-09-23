@@ -17,15 +17,17 @@ export function ReplicaCards({
     );
   }
   return (
-    <section className="analysis-card" aria-label="Replica status" data-testid="replica-cards">
+    <section className="analysis-card bb-replicas" aria-label="Replica status" data-testid="replica-cards">
       <header className="card-heading">
         <div>
-          <span className="eyebrow">Replication · 3 independent SQLite stores</span>
-          <h2>Replicas <small>{replicas.length}</small></h2>
+          <span className="eyebrow">Replication · 3 independent SQLite stores · one logical Blackboard</span>
+          <h2>Replicas <small>{replicas.length}</small> <span className="bb-replicas__hint">not shards — each holds full quorum-verified log</span></h2>
         </div>
       </header>
       {replicasNote && <p className="annotation">{replicasNote}</p>}
-      <div className="replica-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12 }}>
+      <div className="bb-replica-group" aria-label="Three replicas forming one logical Blackboard">
+        <div className="bb-replica-group__rail" aria-hidden="true"><span /></div>
+        <div className="replica-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12 }}>
         {replicas.map((r) => {
           const { label, tone } = replicaHealthLabel(r.health);
           const isDiverged = r.health === "DIVERGED";
@@ -75,6 +77,7 @@ export function ReplicaCards({
             </article>
           );
         })}
+        </div>
       </div>
       <p className="annotation" style={{ marginTop: 8 }}>
         Replica health describes replication/storage state, not agent trust.

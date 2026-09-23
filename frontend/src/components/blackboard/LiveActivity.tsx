@@ -16,6 +16,24 @@ function outcomeTone(eventType: string): string {
   if (eventType === "BLACKBOARD_REPLICA_STATUS") return "tone-unknown";
   return "tone-unknown";
 }
+function categoryIcon(eventType: string): string {
+  if (eventType.includes("COMMITTED")) return "✓";
+  if (eventType.includes("PARTIAL")) return "◐";
+  if (eventType.includes("REJECTED") || eventType.includes("STALE") || eventType.includes("CONFLICT")) return "✕";
+  if (eventType.includes("READ")) return "◎";
+  if (eventType.includes("REPLICA")) return "⬡";
+  if (eventType.includes("QUORUM") || eventType.includes("STORAGE")) return "⚠";
+  return "•";
+}
+function categoryLabel(eventType: string): string {
+  if (eventType === "BLACKBOARD_WRITE_PROPOSED") return "PROPOSED";
+  if (eventType === "BLACKBOARD_REPLICA_ACK") return "ACK";
+  if (eventType === "BLACKBOARD_WRITE_COMMITTED") return "COMMITTED";
+  if (eventType === "BLACKBOARD_WRITE_PARTIAL") return "PARTIAL";
+  if (eventType.includes("READ")) return "READ";
+  if (eventType.includes("REPLICA_STATUS")) return "REPLICA";
+  return eventType.replace("BLACKBOARD_", "");
+}
 
 function fieldsForEvent(env: EventEnvelopeV1): string {
   const p = env.payload as Record<string, unknown>;
@@ -88,7 +106,13 @@ export function LiveActivity({
                     data-testid={`bb-event-${env.sequence_number}`}
                   >
                     <td className="mono">{env.sequence_number}</td>
-                    <td><span className={`event-type mono ${outcomeTone(env.event_type)}`} data-testid="bb-event-type">{env.event_type}</span></td>
+                    <td>
+                      <span className={`bb-event-pill bb-event-pill--${outcomeTone(env.event_type)}`} data-testid="bb-event-type" title={env.event_type}>
+                        <i className="bb-event-pill__icon" aria-hidden="true">{categoryIcon(env.event_type)}</i>
+                        {categoryLabel(env.event_type)}
+                      </span>
+                      <span className="mono" style={{ display: "block", fontSize: "0.60rem", color: "var(--text-muted)", marginTop: 2 }}>{env.event_type}</span>
+                    </td>
                     <td className="mono">{env.entity_id ?? "—"}</td>
                     <td className="mono">{env.window_id ?? "—"}</td>
                     <td className="mono payload-cell" title={JSON.stringify(env.payload)}>

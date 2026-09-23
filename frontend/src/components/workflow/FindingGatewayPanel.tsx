@@ -20,8 +20,8 @@ export function NetworkDetectorPanel({ snapshot, entityId }: { snapshot: Workflo
   const risk = snapshot.latest_risk_recommendations.find((r) => r.entity_id === entityId);
 
   return (
-    <section className="detector-panel" aria-label="Network Detector" data-testid="network-detector-panel">
-      <h4>Network / Anomaly Detector</h4>
+    <section className="detector-panel workflow-stage" aria-label="Network Detector" data-testid="network-detector-panel">
+      <h4>Network / Anomaly Detector <span className="stage-badge">1A</span></h4>
       <div className="annotation">Backend NetworkFinding facts where available — never recalculates probability or derives attack family.</div>
       <dl style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 4, marginTop: 8 }}>
         <dt>Entity ID</dt>
@@ -53,8 +53,8 @@ export function BehavioralProfilerPanel({ snapshot, entityId }: { snapshot: Work
   const behaviorRisk = risk?.behavior_risk;
 
   return (
-    <section className="detector-panel" aria-label="Behavioural Profiler" data-testid="behavioral-profiler-panel">
-      <h4>IoT Behavioural Profiler</h4>
+    <section className="detector-panel workflow-stage" aria-label="Behavioural Profiler" data-testid="behavioral-profiler-panel">
+      <h4>IoT Behavioural Profiler <span className="stage-badge">1B</span></h4>
       <dl style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 4, marginTop: 8 }}>
         <dt>Entity ID</dt>
         <dd className="mono" data-testid="behavior-entity-id">{entityId}</dd>
@@ -111,8 +111,8 @@ export function FindingGatewayPanel({
 
   if (sorted.length === 0) {
     return (
-      <section className="gateway-panel" aria-label="Finding Gateway" data-testid="finding-gateway-panel">
-        <h4>Finding Gateway — Retained Gateway events</h4>
+      <section className="gateway-panel workflow-stage workflow-stage--gateway" aria-label="Finding Gateway" data-testid="finding-gateway-panel">
+        <h4>Finding Gateway — Retained Gateway events <span className="stage-badge stage-badge--gateway">Boundary</span></h4>
         <p className="annotation">Backend-authoritative acceptance/rejection only — do not infer acceptance from downstream workflow products.</p>
         <div className="compact-empty" data-testid="gateway-not-present" role="status">
           Gateway outcome not present in retained local event history. Current REST workflow state remains authoritative.
@@ -131,8 +131,8 @@ export function FindingGatewayPanel({
   }
 
   return (
-    <section className="gateway-panel" aria-label="Finding Gateway" data-testid="finding-gateway-panel">
-      <h4>Finding Gateway — Retained Gateway events</h4>
+    <section className="gateway-panel workflow-stage workflow-stage--gateway" aria-label="Finding Gateway" data-testid="finding-gateway-panel">
+      <h4>Finding Gateway — Retained Gateway events <span className="stage-badge stage-badge--gateway">Boundary</span></h4>
       <p className="annotation">Backend-authoritative acceptance/rejection only — derived from actual scientific GATEWAY events, not downstream correlation existence. No aggregate verdict is calculated.</p>
       <div className="annotation">Entity <span className="mono" data-testid="gateway-entity-id">{entityId}</span> Window <span className="mono" data-testid="gateway-window-id">{sorted[0].window_id ?? windowId ?? "—"}</span></div>
       <table role="table" aria-label="Gateway events" data-testid="gateway-events-table" style={{ width: "100%", marginTop: 8, borderCollapse: "collapse", fontSize: "0.85em" }}>

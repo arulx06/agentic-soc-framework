@@ -10,6 +10,7 @@ import { useReplayContext } from "../../state/ReplayContext";
 import { useWorkflow } from "../../hooks/useWorkflow";
 import { WorkflowOverview } from "./WorkflowOverview";
 import { AgentRoleCards } from "./AgentRoleCards";
+import { WorkflowPipeline } from "./WorkflowPipeline";
 import { EntityWorkflowTable } from "./EntityWorkflowTable";
 import { EntityWorkflowDetail } from "./EntityWorkflowDetail";
 import { WorkflowTrace } from "./WorkflowTrace";
@@ -224,6 +225,14 @@ export function FiveAgentWorkflowView() {
         error={workflow.snapshotError}
         onRefresh={workflow.refreshSnapshot}
         replayId={state.replayId}
+      />
+
+      {/* Read-only pipeline visualization — separate inputs converging at Gateway */}
+      <WorkflowPipeline
+        snapshot={workflow.snapshot}
+        selectedEntityId={effectiveSelectedEntityId}
+        selectedWindowId={effectiveSelectedWindowId}
+        events={state.events}
       />
 
       {/* Exactly five specialist cards */}

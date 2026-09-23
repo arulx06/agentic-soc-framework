@@ -25,15 +25,15 @@ export function ThreatCorrelationPanel({ snapshot, entityId }: { snapshot: Workf
   const status = mappingStatusLabel(corr.mapping_status);
 
   return (
-    <section className="threat-panel" aria-label="Threat Correlation" data-testid="threat-correlation-panel">
-      <h4>Threat Intelligence Correlator</h4>
+    <section className="threat-panel workflow-stage" aria-label="Threat Correlation" data-testid="threat-correlation-panel">
+      <h4>Threat Intelligence Correlator <span className="stage-badge">Stage 2</span></h4>
       <dl style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 4, marginTop: 8 }}>
         <dt>Entity</dt>
         <dd className="mono" data-testid="threat-entity-id">{corr.entity_id}</dd>
         <dt>Window</dt>
         <dd className="mono" data-testid="threat-window-id">{corr.window_id}</dd>
         <dt>Mapping status</dt>
-        <dd className="mono" data-testid="threat-mapping-status">{status.label}</dd>
+        <dd data-testid="threat-mapping-status"><span className={`pipeline-pill ${status.tone}`}>{status.label}</span></dd>
         <dt>Catalog version</dt>
         <dd className="mono">{corr.mapping_catalog_version}</dd>
         <dt>Confidence</dt>

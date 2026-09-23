@@ -21,8 +21,8 @@ export function EnforcementDecisionPanel({ snapshot, entityId }: { snapshot: Wor
   const committed = decision?.action ?? null;
 
   return (
-    <section className="enforcement-panel" aria-label="Enforcement Decision" data-testid="enforcement-decision-panel">
-      <h4>Enforcement / Committed workflow action</h4>
+    <section className="enforcement-panel workflow-stage workflow-stage--enforcement" aria-label="Enforcement Decision" data-testid="enforcement-decision-panel">
+      <h4>Enforcement / Committed workflow action <span className="stage-badge stage-badge--final">Final</span></h4>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8 }}>
         <div className="summary-item" style={{ border: "1px solid var(--border-subtle)", padding: 8, borderRadius: 6 }}>

@@ -61,40 +61,47 @@ describe("Header", () => {
 });
 
 describe("Device-state table", () => {
-  it("unsupported behaviour renders N/A / Unsupported, never 0", () => {
+  it("no longer renders beh risk, net risk or systemic columns", () => {
     const devices = [
       makeDeviceState({
         entity_id: "router",
         behavior_supported: false,
-        behavior_risk: null,
+        propagated_risk: 0.12,
       }),
     ];
     render(<DeviceStateTable devices={devices} />);
-    const cell = screen.getByTestId("beh-risk-router");
-    expect(cell).toHaveTextContent("N/A / Unsupported");
-    expect(cell).not.toHaveTextContent(/^0\.000$/);
+    expect(screen.queryByTestId("beh-risk-router")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Beh risk/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Net risk/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Systemic/i)).not.toBeInTheDocument();
+    expect(screen.getByText("router")).toBeInTheDocument();
   });
 
-  it("supported zero risk renders as 0.000", () => {
+  it("inspector no longer shows beh/systemic risk, only propagated", async () => {
+    const user = userEvent.setup();
     const devices = [
       makeDeviceState({
         entity_id: "soil-sensor",
         behavior_supported: true,
-        behavior_risk: 0,
+        propagated_risk: 0.42,
       }),
     ];
     render(<DeviceStateTable devices={devices} />);
-    expect(screen.getByTestId("beh-risk-soil-sensor")).toHaveTextContent(
-      "0.000"
-    );
+    await user.click(screen.getByText("soil-sensor"));
+    expect(await screen.findByLabelText("Selected device details")).toBeInTheDocument();
+    expect(screen.queryByText(/Behavior risk/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Systemic risk/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Propagated risk/i)).toBeInTheDocument();
+    expect(screen.getByText("0.420")).toBeInTheDocument();
   });
 
-  it("supported non-zero risk renders numerically", () => {
+  it("renders device rows without risk columns", () => {
     const devices = [
-      makeDeviceState({ entity_id: "edge1", behavior_risk: 0.42 }),
+      makeDeviceState({ entity_id: "edge1" }),
     ];
     render(<DeviceStateTable devices={devices} />);
-    expect(screen.getByTestId("beh-risk-edge1")).toHaveTextContent("0.420");
+    expect(screen.getByText("edge1")).toBeInTheDocument();
+    expect(screen.queryByTestId("beh-risk-edge1")).not.toBeInTheDocument();
   });
 });
 

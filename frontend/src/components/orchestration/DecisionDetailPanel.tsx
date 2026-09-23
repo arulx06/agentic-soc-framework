@@ -23,45 +23,94 @@ export function DecisionDetailPanel({ decision, loading, error, onClose }: { dec
 
   return (
     <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <aside className="snapshot-drawer orchestration-drawer" role="dialog" aria-modal="true" aria-labelledby="decision-detail-title" onKeyDown={(event) => { if (event.key === "Escape") onClose(); }}>
-        <header className="drawer-heading"><div><span className="eyebrow">Backend terminal decision / authoritative</span><h2 id="decision-detail-title">Decision detail</h2></div><button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="Close decision detail">x</button></header>
+      <aside className="snapshot-drawer orchestration-drawer orchestration-drawer--detail" role="dialog" aria-modal="true" aria-labelledby="decision-detail-title" onKeyDown={(event) => { if (event.key === "Escape") onClose(); }}>
+        <header className="drawer-heading"><div><span className="eyebrow">Backend terminal decision / authoritative — never BFT</span><h2 id="decision-detail-title">Decision detail</h2></div><button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="Close decision detail">x</button></header>
         {loading && <div className="compact-empty">Loading decision...</div>}
         {error && <div className="error-banner" role="alert">Decision detail unavailable: {error}</div>}
         {decision && !loading && (
           <>
+            {/* 6. Backend terminal result — shown first for immediate scannability but also authoritative */}
             <section className="orchestration-terminal" aria-label="Authoritative terminal result">
-              <span className="eyebrow">Terminal outcome</span>
+              <span className="eyebrow">6 · Backend terminal result (authoritative)</span>
               <strong className={`mono ${decision.outcome === "DECIDED" ? "tone-committed" : "tone-failed"}`}>{decision.outcome}</strong>
               <span>Authoritative result</span><b className="mono">{route ?? "No route selected"}</b>
               <p>{decision.reason}</p>
             </section>
             <p className="annotation">The result above is read only from the terminal backend decision. Proposal counts, vote counts, supporter arrays, and QUORUM_REACHED events are never used by this UI to derive a result, support, or quorum.</p>
 
-            <dl className="metadata-list">
-              <div><dt>Decision ID</dt><dd className="mono">{decision.decision_id}</dd></div>
-              <div><dt>Request</dt><dd className="mono">{decision.request_id} / v{decision.request_version}</dd></div>
-              <div><dt>Round</dt><dd className="mono">{decision.round_id}</dd></div>
-              <div><dt>Request digest</dt><dd><DigestField value={decision.request_digest} label="request digest" /></dd></div>
-              <div><dt>Selected proposal digest</dt><dd><DigestField value={decision.outcome === "DECIDED" ? decision.selected_proposal_digest : null} label="selected proposal digest" /></dd></div>
-              <div><dt>Backend quorum fact</dt><dd className="mono">formed={String(decision.quorum_formed)} / required={decision.required_quorum}</dd></div>
-              <div><dt>Quorum latency</dt><dd className="mono">{decision.quorum_latency_ms == null ? "N/A" : `${decision.quorum_latency_ms} ms`}</dd></div>
-              <div><dt>Decision latency</dt><dd className="mono">{decision.decision_latency_ms} ms</dd></div>
-              <div><dt>Logical context</dt><dd className="mono">timestamp={decision.logical_timestamp ?? "None"}; window={decision.window_id ?? "None"}</dd></div>
-              <div><dt>Completed</dt><dd className="mono">{decision.completed_at_utc}</dd></div>
-            </dl>
+            {/* 1. Decision identity */}
+            <section className="bb-drawer__section" aria-label="Decision identity">
+              <h3 className="bb-section-heading"><span className="bb-section-icon">◈</span> 1 · Decision identity</h3>
+              <dl className="metadata-list">
+                <div><dt>Decision ID</dt><dd className="mono">{decision.decision_id}</dd></div>
+                <div><dt>Request</dt><dd className="mono">{decision.request_id} / v{decision.request_version}</dd></div>
+                <div><dt>Round</dt><dd className="mono">{decision.round_id}</dd></div>
+                <div><dt>Completed</dt><dd className="mono">{decision.completed_at_utc}</dd></div>
+              </dl>
+            </section>
 
-            <section className="orchestration-detail-section"><h3>Participation distinctions</h3><div className="participation-grid">{PARTICIPATION.map(([key, label]) => { const values = decision[key] as string[]; return <div key={String(key)}><span>{label}</span><strong className="mono">{values.length ? values.join(", ") : "None listed"}</strong></div>; })}</div></section>
+            {/* 2. Proposal */}
+            <section className="bb-drawer__section" aria-label="Proposal">
+              <h3 className="bb-section-heading"><span className="bb-section-icon">▤</span> Exact proposal summaries ({decision.proposal_summaries.length})</h3>
+              <dl className="metadata-list">
+                <div><dt>Request digest</dt><dd><DigestField value={decision.request_digest} label="request digest" /></dd></div>
+                <div><dt>Selected proposal digest</dt><dd><DigestField value={decision.outcome === "DECIDED" ? decision.selected_proposal_digest : null} label="selected proposal digest" /></dd></div>
+              </dl>
+              {decision.proposal_summaries.length === 0 ? <p className="annotation">No proposal summaries returned.</p> : (
+                <details className="technical-details" open>
+                  <summary>Details — backend verbatim</summary>
+                  <div className="bounded-table"><table className="data-table"><thead><tr><th>Orchestrator</th><th>Route proposed</th><th>Auth verified</th><th>Policy / rationale</th><th>Latency</th><th>Proposal digest</th><th>Message hash</th></tr></thead><tbody>{decision.proposal_summaries.map((proposal) => <tr key={proposal.message_id}><td className="mono">{proposal.orchestrator_id}<br /><small>{proposal.message_id}</small></td><td className="mono">{proposal.proposed_route_id}</td><td>{String(proposal.authentication_verified)}</td><td className="mono">{proposal.policy_id}@{proposal.policy_version}<br />{proposal.rationale_code}</td><td className="mono">{proposal.latency_ms} ms</td><td><DigestField value={proposal.proposal_digest} label="proposal digest" /></td><td><DigestField value={proposal.message_hash} label="proposal message hash" /></td></tr>)}</tbody></table></div>
+                </details>
+              )}
+            </section>
 
-            <section className="orchestration-detail-section"><h3>Exact proposal summaries ({decision.proposal_summaries.length})</h3>{decision.proposal_summaries.length === 0 ? <p className="annotation">No proposal summaries returned.</p> : <div className="bounded-table"><table className="data-table"><thead><tr><th>Orchestrator</th><th>Route proposed</th><th>Auth verified</th><th>Policy / rationale</th><th>Latency</th><th>Proposal digest</th><th>Message hash</th></tr></thead><tbody>{decision.proposal_summaries.map((proposal) => <tr key={proposal.message_id}><td className="mono">{proposal.orchestrator_id}<br /><small>{proposal.message_id}</small></td><td className="mono">{proposal.proposed_route_id}</td><td>{String(proposal.authentication_verified)}</td><td className="mono">{proposal.policy_id}@{proposal.policy_version}<br />{proposal.rationale_code}</td><td className="mono">{proposal.latency_ms} ms</td><td><DigestField value={proposal.proposal_digest} label="proposal digest" /></td><td><DigestField value={proposal.message_hash} label="proposal message hash" /></td></tr>)}</tbody></table></div>}</section>
+            {/* 3. Participants */}
+            <section className="bb-drawer__section" aria-label="Participants">
+              <h3 className="bb-section-heading"><span className="bb-section-icon">⬡</span> 3 · Participants</h3>
+              <div className="participation-grid">{PARTICIPATION.slice(0,2).map(([key, label]) => { const values = decision[key] as string[]; return <div key={String(key)}><span>{label}</span><strong className="mono">{values.length ? values.join(", ") : "None listed"}</strong></div>; })}</div>
+            </section>
 
-            <section className="orchestration-detail-section"><h3>Exact vote summaries ({decision.vote_summaries.length})</h3>{decision.vote_summaries.length === 0 ? <p className="annotation">No vote summaries returned.</p> : <div className="bounded-table"><table className="data-table"><thead><tr><th>Orchestrator</th><th>Vote</th><th>Auth verified</th><th>Reason</th><th>Latency</th><th>Selected digest</th><th>Message hash</th></tr></thead><tbody>{decision.vote_summaries.map((vote) => <tr key={vote.message_id}><td className="mono">{vote.orchestrator_id}<br /><small>{vote.message_id}</small></td><td className="mono">{vote.vote}</td><td>{String(vote.authentication_verified)}</td><td className="mono">{vote.reason_code}</td><td className="mono">{vote.latency_ms} ms</td><td><DigestField value={vote.selected_proposal_digest} label="voted proposal digest" /></td><td><DigestField value={vote.message_hash} label="vote message hash" /></td></tr>)}</tbody></table></div>}</section>
+            {/* 4. Individual votes */}
+            <section className="bb-drawer__section" aria-label="Individual votes">
+              <h3 className="bb-section-heading"><span className="bb-section-icon">✓</span> Exact vote summaries ({decision.vote_summaries.length})</h3>
+              {decision.vote_summaries.length === 0 ? <p className="annotation">No vote summaries returned.</p> : (
+                <details className="technical-details" open>
+                  <summary>Details — backend verbatim</summary>
+                  <div className="bounded-table"><table className="data-table"><thead><tr><th>Orchestrator</th><th>Vote</th><th>Auth verified</th><th>Reason</th><th>Latency</th><th>Selected digest</th><th>Message hash</th></tr></thead><tbody>{decision.vote_summaries.map((vote) => <tr key={vote.message_id}><td className="mono">{vote.orchestrator_id}<br /><small>{vote.message_id}</small></td><td className="mono">{vote.vote}</td><td>{String(vote.authentication_verified)}</td><td className="mono">{vote.reason_code}</td><td className="mono">{vote.latency_ms} ms</td><td><DigestField value={vote.selected_proposal_digest} label="voted proposal digest" /></td><td><DigestField value={vote.message_hash} label="vote message hash" /></td></tr>)}</tbody></table></div>
+                </details>
+              )}
+            </section>
 
-            <p className="annotation">The backend <code>proposal_digest</code> represents semantic route support for one request, so separate orchestrators can share it. Each <code>message_hash</code> binds an individual sender message and normally differs. React displays these values exactly as received and does not recompute or verify either hash.</p>
+            {/* 5. Missing / timeout / unavailable */}
+            <section className="bb-drawer__section" aria-label="Missing timeout unavailable">
+              <h3 className="bb-section-heading"><span className="bb-section-icon">⚠</span> 5 · Missing · timeout · unavailable</h3>
+              <div className="participation-grid">{PARTICIPATION.slice(2).map(([key, label]) => { const values = decision[key] as string[]; return <div key={String(key)}><span>{label}</span><strong className="mono">{values.length ? values.join(", ") : "None listed"}</strong></div>; })}</div>
+            </section>
 
-            <section className="orchestration-detail-section"><h3>Backend rejections ({decision.rejections.length})</h3>{decision.rejections.length === 0 ? <p className="annotation">No rejections returned.</p> : <div className="bounded-table"><table className="data-table"><thead><tr><th>Phase</th><th>Reason</th><th>Orchestrator</th><th>Message</th><th>Detail</th></tr></thead><tbody>{decision.rejections.map((rejection, index) => <tr key={`${rejection.message_id ?? "round"}-${index}`}><td>{rejection.phase}</td><td className="mono">{rejection.reason_code}</td><td className="mono">{rejection.orchestrator_id ?? "None"}</td><td className="mono">{rejection.message_id ?? "None"}</td><td>{rejection.detail}</td></tr>)}</tbody></table></div>}</section>
+            {/* 7. Timing / latency */}
+            <section className="bb-drawer__section" aria-label="Timing and latency">
+              <h3 className="bb-section-heading"><span className="bb-section-icon">◷</span> 7 · Timing &amp; latency</h3>
+              <dl className="metadata-list">
+                <div><dt>Backend quorum fact</dt><dd className="mono">formed={String(decision.quorum_formed)} / required={decision.required_quorum}</dd></div>
+                <div><dt>Quorum latency</dt><dd className="mono">{decision.quorum_latency_ms == null ? "N/A" : `${decision.quorum_latency_ms} ms`}</dd></div>
+                <div><dt>Decision latency</dt><dd className="mono">{decision.decision_latency_ms} ms</dd></div>
+                <div><dt>Logical context</dt><dd className="mono">timestamp={decision.logical_timestamp ?? "None"}; window={decision.window_id ?? "None"}</dd></div>
+              </dl>
+            </section>
 
-            <details className="technical-details" open><summary>Backend provenance</summary><pre>{JSON.stringify(decision.provenance, null, 2)}</pre></details>
-            <p className="annotation banner-warning">A verified internal message authentication tag establishes key possession and message integrity under this runtime's key assumptions. Caller principal is an application/audit identity; its HTTP origin is not proof of honesty.</p>
+            {/* 8. Provenance */}
+            <section className="bb-drawer__section" aria-label="Provenance">
+              <h3 className="bb-section-heading"><span className="bb-section-icon">⧉</span> 8 · Provenance</h3>
+              <details className="technical-details" open><summary>Backend provenance (verbatim)</summary><pre>{JSON.stringify(decision.provenance, null, 2)}</pre></details>
+              <p className="annotation banner-warning">A verified internal message authentication tag establishes key possession and message integrity under this runtime&apos;s key assumptions. Caller principal is an application/audit identity; its HTTP origin is not proof of honesty.</p>
+            </section>
+
+            {/* 9. Technical digests / payload */}
+            <section className="bb-drawer__section" aria-label="Technical digests">
+              <h3 className="bb-section-heading"><span className="bb-section-icon">#</span> 9 · Technical digests &amp; payload</h3>
+              <p className="annotation">The backend <code>proposal_digest</code> represents semantic route support for one request, so separate orchestrators can share it. Each <code>message_hash</code> binds an individual sender message and normally differs. React displays these values exactly as received and does not recompute or verify either hash.</p>
+              <section className="orchestration-detail-section"><h3>Backend rejections ({decision.rejections.length})</h3>{decision.rejections.length === 0 ? <p className="annotation">No rejections returned.</p> : <div className="bounded-table"><table className="data-table"><thead><tr><th>Phase</th><th>Reason</th><th>Orchestrator</th><th>Message</th><th>Detail</th></tr></thead><tbody>{decision.rejections.map((rejection, index) => <tr key={`${rejection.message_id ?? "round"}-${index}`}><td>{rejection.phase}</td><td className="mono">{rejection.reason_code}</td><td className="mono">{rejection.orchestrator_id ?? "None"}</td><td className="mono">{rejection.message_id ?? "None"}</td><td>{rejection.detail}</td></tr>)}</tbody></table></div>}</section>
+            </section>
           </>
         )}
       </aside>

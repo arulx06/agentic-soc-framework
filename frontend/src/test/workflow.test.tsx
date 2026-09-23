@@ -819,9 +819,8 @@ describe("18. Future-stage boundaries", () => {
     expect(screen.getByTestId("nav-device-view")).toBeInTheDocument();
     expect(screen.getByTestId("nav-blackboard")).toBeInTheDocument();
     expect(screen.getByTestId("nav-orchestration")).toBeInTheDocument();
-    expect(screen.getByTestId("nav-workflow")).toBeInTheDocument();
-    await user.click(screen.getByTestId("nav-workflow"));
-    expect(screen.getByTestId("workflow-view")).toBeInTheDocument();
+    expect(screen.queryByTestId("nav-workflow")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workflow-view")).not.toBeInTheDocument();
     await user.click(screen.getByTestId("nav-device-view"));
     expect(screen.getByTestId("srep-mode-badge")).toBeInTheDocument();
   });

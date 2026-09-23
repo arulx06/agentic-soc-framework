@@ -20,6 +20,7 @@ export function RecordBrowser({
   onSelect,
   onChangeFilters,
   filters,
+  selectedKey,
 }: {
   listing: BlackboardRecordListingV1 | null;
   loading: boolean;
@@ -27,6 +28,7 @@ export function RecordBrowser({
   onSelect: (recordKey: string) => void;
   onChangeFilters: (next: { record_type?: string; key_prefix?: string; limit?: number; offset?: number }) => void;
   filters: { record_type?: string; key_prefix?: string; limit: number; offset: number };
+  selectedKey?: string | null;
 }) {
   const [prefixInput, setPrefixInput] = useState(filters.key_prefix ?? "");
   const items = listing?.items ?? [];
@@ -50,8 +52,8 @@ export function RecordBrowser({
         </span>
       </header>
 
-      <div className="control-source" style={{ marginBottom: 10, gap: 8 }}>
-        <label>
+      <div className="bb-filters" style={{ display: "grid", gridTemplateColumns: "minmax(160px, 1fr) minmax(220px, 1.4fr) auto minmax(90px, auto)", gap: 8, marginBottom: 10, alignItems: "end" }}>
+        <label className="bb-filter">
           <span>Type</span>
           <select
             className="control-input"
@@ -64,7 +66,7 @@ export function RecordBrowser({
             ))}
           </select>
         </label>
-        <label>
+        <label className="bb-filter">
           <span>Key prefix</span>
           <input
             className="control-input"
@@ -78,7 +80,7 @@ export function RecordBrowser({
           />
         </label>
         <button className="button button--ghost" type="button" onClick={() => onChangeFilters({ key_prefix: prefixInput || undefined, offset: 0 })} aria-label="Apply key prefix filter">Apply</button>
-        <label>
+        <label className="bb-filter">
           <span>Limit</span>
           <select
             className="control-input"
@@ -127,14 +129,21 @@ export function RecordBrowser({
               </thead>
               <tbody>
                 {items.map((r) => (
-                  <tr key={`${r.record_key}#${r.record_version}`} onClick={() => onSelect(r.record_key)} style={{ cursor: "pointer" }} data-testid={`record-row-${r.record_key}`}>
+                  <tr
+                    key={`${r.record_key}#${r.record_version}`}
+                    onClick={() => onSelect(r.record_key)}
+                    style={{ cursor: "pointer" }}
+                    data-testid={`record-row-${r.record_key}`}
+                    className={selectedKey === r.record_key ? "is-selected" : ""}
+                    aria-selected={selectedKey === r.record_key}
+                  >
                     <td className="mono payload-cell" title={r.record_key}>{r.record_key}</td>
-                    <td className="mono" style={{ fontSize: "0.62rem" }}>{r.record_type}</td>
-                    <td className="mono">{r.record_version}</td>
-                    <td className="mono">{r.author_id}</td>
+                    <td><span className={`record-type-pill record-type--${r.record_type.split("_")[0].toLowerCase()}`}>{r.record_type.replace("_RECORD","")}</span></td>
+                    <td className="mono"><span className="version-pill">v{r.record_version}</span></td>
+                    <td className="mono"><span className="author-chip">{r.author_id}</span>{r.source_component.split(".").slice(-1)[0] !== r.author_id && <small className="mono" style={{ display: "block", color: "var(--text-muted)", fontSize: "0.60rem" }}>{r.source_component}</small>}</td>
                     <td className="mono"><HashField hash={r.content_hash} label="content hash" /></td>
                     <td className="mono">{r.window_id ?? "—"}</td>
-                    <td className="mono" style={{ fontSize: "0.62rem" }}>{r.supporting_replicas.join(", ")}</td>
+                    <td className="mono" style={{ fontSize: "0.62rem" }}><span className="replica-chips">{r.supporting_replicas.map((rep) => <i key={rep} className="replica-chip" title={rep}>{rep.slice(-1).toUpperCase()}</i>)}</span> {r.supporting_replicas.join(", ")}</td>
                   </tr>
                 ))}
               </tbody>

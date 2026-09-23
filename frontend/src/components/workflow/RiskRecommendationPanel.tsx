@@ -23,8 +23,8 @@ export function RiskRecommendationPanel({ snapshot, entityId }: { snapshot: Work
   }
 
   return (
-    <section className="risk-panel" aria-label="Risk Recommendation" data-testid="risk-recommendation-panel">
-      <h4>Risk Propagation Analyst</h4>
+    <section className="risk-panel workflow-stage" aria-label="Risk Recommendation" data-testid="risk-recommendation-panel">
+      <h4>Risk Propagation Analyst <span className="stage-badge">Stage 3</span></h4>
       <p className="annotation">Backend-produced values only — React does not recalculate risk.</p>
       <dl style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 4, marginTop: 8 }}>
         <dt>Entity</dt>

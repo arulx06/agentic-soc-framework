@@ -61,86 +61,97 @@ export function OperationTrace({
       )}
 
       {selected && (
-        <div className="inline-inspector" aria-label="Selected operation lifecycle" data-testid="operation-detail">
+        <div className="inline-inspector bb-timeline-inspector" aria-label="Selected operation lifecycle" data-testid="operation-detail">
           <header>
             <strong className="mono" title={selected.operationId}>op {selected.operationId}</strong>
             <button className="icon-button" aria-label="Close operation detail" onClick={() => onSelect(null)}>×</button>
           </header>
 
-          <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+          <div className="bb-timeline" aria-label="Backend operation chronology">
             {/* PROPOSED */}
-            {selected.proposed ? (
-              <div>
-                <span className="eyebrow">Proposed</span>
-                <p className="mono" style={{ fontSize: "0.72rem", margin: "4px 0" }}>
-                  Seq {selected.proposed.sequence_number} · key <span className="mono">{String((selected.proposed.payload as Record<string, unknown>).record_key ?? "—")}</span> · v{String((selected.proposed.payload as Record<string, unknown>).record_version ?? "—")} · {String((selected.proposed.payload as Record<string, unknown>).record_type ?? "")}
-                </p>
-                <p className="mono" style={{ fontSize: "0.68rem" }}>hash <HashField hash={String((selected.proposed.payload as Record<string, unknown>).content_hash ?? "")} /></p>
+            <div className="bb-timeline__stage">
+              <span className="bb-timeline__dot bb-timeline__dot--proposed" aria-hidden="true" />
+              <div className="bb-timeline__content">
+                <span className="eyebrow">Proposed — backend write proposal</span>
+                {selected.proposed ? (
+                  <>
+                    <p className="mono" style={{ fontSize: "0.72rem", margin: "4px 0" }}>
+                      Seq {selected.proposed.sequence_number} · key <span className="mono">{String((selected.proposed.payload as Record<string, unknown>).record_key ?? "—")}</span> · v{String((selected.proposed.payload as Record<string, unknown>).record_version ?? "—")} · {String((selected.proposed.payload as Record<string, unknown>).record_type ?? "")}
+                    </p>
+                    <p className="mono" style={{ fontSize: "0.68rem" }}>hash <HashField hash={String((selected.proposed.payload as Record<string, unknown>).content_hash ?? "")} /></p>
+                  </>
+                ) : <p className="annotation">No PROPOSED payload (operation_id still groups ACKs/terminal).</p>}
               </div>
-            ) : <p className="annotation">No PROPOSED payload (operation_id still groups ACKs/terminal).</p>}
+            </div>
 
             {/* ACKs — sorted by sequence_number */}
-            <div>
-              <span className="eyebrow">Replica ACKs ({selected.acks.length}) — real replica ACKs only</span>
-              {selected.acks.length === 0 ? <p className="annotation">No ACKs captured (may be stale/rejected before prepare).</p> : (
-                <div className="bounded-table" style={{ maxHeight: 200 }}>
-                  <table className="data-table">
-                    <thead><tr><th>Seq</th><th>Replica</th><th>Status</th><th>Latency</th><th>Hash</th><th>Reason</th></tr></thead>
-                    <tbody>
-                      {selected.acks.map((a) => {
-                        const p = a.payload as Record<string, unknown>;
-                        return (
-                          <tr key={a.event_id}>
-                            <td className="mono">{a.sequence_number}</td>
-                            <td className="mono">{String(p.replica_id ?? "—")}</td>
-                            <td className="mono">{String(p.ack_status ?? "—")}</td>
-                            <td className="mono">{p.latency_ms != null ? `${p.latency_ms} ms` : "—"}</td>
-                            <td className="mono">{p.content_hash ? <HashField hash={String(p.content_hash)} /> : "—"}</td>
-                            <td className="mono payload-cell" title={String(p.reason ?? "")}>{p.reason ? String(p.reason) : "—"}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <p className="annotation">ACK count does not determine the terminal outcome — see below.</p>
+            <div className="bb-timeline__stage">
+              <span className="bb-timeline__dot bb-timeline__dot--ack" aria-hidden="true" />
+              <div className="bb-timeline__content">
+                <span className="eyebrow">Replica ACKs ({selected.acks.length}) — real replica ACKs only</span>
+                {selected.acks.length === 0 ? <p className="annotation">No ACKs captured (may be stale/rejected before prepare).</p> : (
+                  <div className="bounded-table" style={{ maxHeight: 200 }}>
+                    <table className="data-table">
+                      <thead><tr><th>Seq</th><th>Replica</th><th>Status</th><th>Latency</th><th>Hash</th><th>Reason</th></tr></thead>
+                      <tbody>
+                        {selected.acks.map((a) => {
+                          const p = a.payload as Record<string, unknown>;
+                          return (
+                            <tr key={a.event_id}>
+                              <td className="mono">{a.sequence_number}</td>
+                              <td className="mono">{String(p.replica_id ?? "—")}</td>
+                              <td className="mono">{String(p.ack_status ?? "—")}</td>
+                              <td className="mono">{p.latency_ms != null ? `${p.latency_ms} ms` : "—"}</td>
+                              <td className="mono">{p.content_hash ? <HashField hash={String(p.content_hash)} /> : "—"}</td>
+                              <td className="mono payload-cell" title={String(p.reason ?? "")}>{p.reason ? String(p.reason) : "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <p className="annotation">ACK count does not determine the terminal outcome — see terminal below (authoritative only).</p>
+              </div>
             </div>
 
             {/* Terminal — authoritative only */}
-            <div>
-              <span className="eyebrow">Backend terminal result (authoritative)</span>
-              {!selected.terminal ? (
-                <p className="annotation">No terminal event yet (in-flight or gap).</p>
-              ) : (
-                <>
-                  <p className={`mono ${writeOutcomeLabel(String((selected.terminal.payload as Record<string, unknown>).outcome ?? selected.terminal.event_type)).tone}`} style={{ fontSize: "0.82rem", fontWeight: 700 }} data-testid="terminal-outcome">
-                    {(() => {
-                      const p = selected.terminal!.payload as Record<string, unknown>;
-                      const outcome = String(p.outcome ?? selected.terminal!.event_type);
-                      const { label } = writeOutcomeLabel(outcome);
-                      return label;
-                    })()}
-                  </p>
-                  <dl className="metadata-list" style={{ marginTop: 8 }}>
-                    <div><dt>Event type</dt><dd className="mono">{selected.terminal.event_type}</dd></div>
-                    <div><dt>Outcome</dt><dd className="mono" data-testid="terminal-outcome-raw">{String((selected.terminal.payload as Record<string, unknown>).outcome ?? "—")}</dd></div>
-                    <div><dt>Seq</dt><dd className="mono">{selected.terminal.sequence_number}</dd></div>
-                    <div><dt>ack_count / required_quorum</dt><dd className="mono">{String((selected.terminal.payload as Record<string, unknown>).ack_count ?? "—")} / {String((selected.terminal.payload as Record<string, unknown>).required_quorum ?? "—")}</dd></div>
-                    <div><dt>Commit latency</dt><dd className="mono">{(selected.terminal.payload as Record<string, unknown>).commit_latency_ms != null ? `${(selected.terminal.payload as Record<string, unknown>).commit_latency_ms} ms` : "—"}</dd></div>
-                    <div><dt>Reason</dt><dd className="mono" style={{ overflowWrap: "anywhere" }}>{String((selected.terminal.payload as Record<string, unknown>).reason ?? "—")}</dd></div>
-                    <div><dt>Replica sync</dt><dd className="mono" style={{ overflowWrap: "anywhere", fontSize: "0.68rem" }}>{(() => { const rs = (selected.terminal!.payload as Record<string, unknown>).replica_sync as Record<string, string> | undefined; return rs ? Object.entries(rs).map(([k, v]) => `${k}:${v}`).join(", ") : "—"; })()}</dd></div>
-                  </dl>
-                  {String((selected.terminal.payload as Record<string, unknown>).outcome) === "PARTIAL_COMMIT" && (
-                    <p className="annotation banner-warning" data-testid="partial-commit-detail">
-                      PARTIAL_COMMIT is degraded/indeterminate — exactly one replica committed. Not committed success; requires reconciliation.
+            <div className="bb-timeline__stage bb-timeline__stage--terminal">
+              <span className={`bb-timeline__dot ${selected.terminal ? `bb-timeline__dot--${writeOutcomeLabel(String((selected.terminal.payload as Record<string, unknown>).outcome ?? selected.terminal.event_type)).tone}` : "bb-timeline__dot--pending"}`} aria-hidden="true" />
+              <div className="bb-timeline__content">
+                <span className="eyebrow">Backend terminal result — authoritative</span>
+                {!selected.terminal ? (
+                  <p className="annotation">No terminal event yet (in-flight or gap).</p>
+                ) : (
+                  <>
+                    <p className={`mono ${writeOutcomeLabel(String((selected.terminal.payload as Record<string, unknown>).outcome ?? selected.terminal.event_type)).tone}`} style={{ fontSize: "0.82rem", fontWeight: 700 }} data-testid="terminal-outcome">
+                      {(() => {
+                        const p = selected.terminal!.payload as Record<string, unknown>;
+                        const outcome = String(p.outcome ?? selected.terminal!.event_type);
+                        const { label } = writeOutcomeLabel(outcome);
+                        return label;
+                      })()}
                     </p>
-                  )}
-                  {selected.terminal.event_type === "BLACKBOARD_WRITE_PARTIAL" && String((selected.terminal.payload as Record<string, unknown>).outcome) !== "PARTIAL_COMMIT" && (
-                    <p className="annotation error-banner">Payload outcome mismatch — still rendered as backend says.</p>
-                  )}
-                </>
-              )}
+                    <dl className="metadata-list" style={{ marginTop: 8 }}>
+                      <div><dt>Event type</dt><dd className="mono">{selected.terminal.event_type}</dd></div>
+                      <div><dt>Outcome</dt><dd className="mono" data-testid="terminal-outcome-raw">{String((selected.terminal.payload as Record<string, unknown>).outcome ?? "—")}</dd></div>
+                      <div><dt>Seq</dt><dd className="mono">{selected.terminal.sequence_number}</dd></div>
+                      <div><dt>ack_count / required_quorum</dt><dd className="mono">{String((selected.terminal.payload as Record<string, unknown>).ack_count ?? "—")} / {String((selected.terminal.payload as Record<string, unknown>).required_quorum ?? "—")}</dd></div>
+                      <div><dt>Commit latency</dt><dd className="mono">{(selected.terminal.payload as Record<string, unknown>).commit_latency_ms != null ? `${(selected.terminal.payload as Record<string, unknown>).commit_latency_ms} ms` : "—"}</dd></div>
+                      <div><dt>Reason</dt><dd className="mono" style={{ overflowWrap: "anywhere" }}>{String((selected.terminal.payload as Record<string, unknown>).reason ?? "—")}</dd></div>
+                      <div><dt>Replica sync</dt><dd className="mono" style={{ overflowWrap: "anywhere", fontSize: "0.68rem" }}>{(() => { const rs = (selected.terminal!.payload as Record<string, unknown>).replica_sync as Record<string, string> | undefined; return rs ? Object.entries(rs).map(([k, v]) => `${k}:${v}`).join(", ") : "—"; })()}</dd></div>
+                    </dl>
+                    {String((selected.terminal.payload as Record<string, unknown>).outcome) === "PARTIAL_COMMIT" && (
+                      <p className="annotation banner-warning" data-testid="partial-commit-detail">
+                        PARTIAL_COMMIT is degraded/indeterminate — exactly one replica committed. Not committed success; requires reconciliation.
+                      </p>
+                    )}
+                    {selected.terminal.event_type === "BLACKBOARD_WRITE_PARTIAL" && String((selected.terminal.payload as Record<string, unknown>).outcome) !== "PARTIAL_COMMIT" && (
+                      <p className="annotation error-banner">Payload outcome mismatch — still rendered as backend says.</p>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>

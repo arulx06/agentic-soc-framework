@@ -8,6 +8,30 @@ export const ORCHESTRATION_EVENT_TYPES = [
   "ORCHESTRATION_NO_QUORUM", "ORCHESTRATION_DECISION",
 ] as const;
 
+function pillClassFor(type: string): string {
+  if (type.includes("PROPOSAL")) return "is-proposal";
+  if (type.includes("VOTE")) return "is-vote";
+  if (type.includes("TIMEOUT")) return "is-timeout";
+  if (type.includes("DELAYED")) return "is-delayed";
+  if (type.includes("OMISSION")) return "is-omission";
+  if (type.includes("QUORUM_REACHED")) return "is-quorum";
+  if (type.includes("NO_QUORUM")) return "is-noquorum";
+  if (type.includes("DECISION")) return "is-decision";
+  if (type.includes("REQUEST")) return "is-request";
+  return "";
+}
+function pillIconFor(type: string): string {
+  if (type.includes("PROPOSAL")) return "▣";
+  if (type.includes("VOTE")) return "✓";
+  if (type.includes("TIMEOUT")) return "◷";
+  if (type.includes("DELAYED")) return "↻";
+  if (type.includes("OMISSION")) return "–";
+  if (type.includes("QUORUM_REACHED")) return "◆";
+  if (type.includes("NO_QUORUM")) return "✕";
+  if (type.includes("DECISION")) return "⬢";
+  return "•";
+}
+
 export function LiveOrchestrationActivity({ events, selectedTraceKey, onSelectTrace }: { events: EventEnvelopeV1[]; selectedTraceKey: string | null; onSelectTrace: (traceKey: string) => void }) {
   const [filter, setFilter] = useState("ALL");
   const [visibleLimit, setVisibleLimit] = useState(120);
@@ -15,10 +39,10 @@ export function LiveOrchestrationActivity({ events, selectedTraceKey, onSelectTr
   const visible = orchestrationEvents.slice(-visibleLimit);
 
   return (
-    <section className="analysis-card" aria-labelledby="orchestration-activity-title">
-      <header className="card-heading"><div><span className="eyebrow">Live observation / backend sequence_number chronology</span><h2 id="orchestration-activity-title">Live activity <small className="mono">{orchestrationEvents.length}</small></h2></div><select className="control-input" value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Filter orchestration event type"><option>ALL</option>{ORCHESTRATION_EVENT_TYPES.map((type) => <option key={type}>{type}</option>)}</select></header>
+    <section className="analysis-card orchestration-live" aria-labelledby="orchestration-activity-title">
+      <header className="card-heading"><div><span className="eyebrow">Live observation / backend sequence_number chronology · 2-of-3 backend decides</span><h2 id="orchestration-activity-title">Live activity <small className="mono">{orchestrationEvents.length}</small></h2></div><select className="control-input" value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Filter orchestration event type"><option>ALL</option>{ORCHESTRATION_EVENT_TYPES.map((type) => <option key={type}>{type}</option>)}</select></header>
       <p className="annotation">REST decisions are authoritative. The stream is chronological observation ordered only by backend <code>sequence_number</code>. A <code>ORCHESTRATION_QUORUM_REACHED</code> row is a backend-published fact, not a browser-computed result.</p>
-      {visible.length === 0 ? <div className="compact-empty">No orchestration events observed.</div> : <div className="bounded-table orchestration-activity-table"><table className="data-table"><thead><tr><th>Seq</th><th>Type</th><th>Request / round</th><th>Participant / entity</th><th>Event fact</th><th>Digest</th></tr></thead><tbody>{visible.map((event) => { const payload = event.payload as Record<string, unknown>; const requestId = stringValue(payload.request_id); const roundId = stringValue(payload.round_id); const traceKey = requestId && roundId ? `${requestId}:${roundId}` : null; const digest = stringValue(payload.proposal_digest ?? payload.selected_proposal_digest ?? payload.request_digest); return <tr key={event.event_id} className={selectedTraceKey && traceKey === selectedTraceKey ? "is-selected" : ""}><td className="mono">{event.sequence_number}</td><td className="event-type mono">{event.event_type}</td><td className="mono">{traceKey ? <button className="orchestration-link-button mono" type="button" onClick={() => onSelectTrace(traceKey)} aria-label={`Open event trace for request ${requestId}, round ${roundId}`}>{requestId}<br /><small>{roundId}</small></button> : "None"}</td><td className="mono">{stringValue(payload.orchestrator_id) ?? event.entity_id ?? "None"}</td><td className="mono payload-cell" title={JSON.stringify(payload)}>{eventFact(event.event_type, payload)}</td><td>{digest ? <DigestField value={digest} label="event digest" /> : "None"}</td></tr>; })}</tbody></table></div>}
+      {visible.length === 0 ? <div className="compact-empty">No orchestration events observed.</div> : <div className="bounded-table orchestration-activity-table"><table className="data-table" aria-label="Orchestration live events"><thead><tr><th>Seq</th><th>Type</th><th>Request / round</th><th>Participant / entity</th><th>Event fact</th><th>Digest</th></tr></thead><tbody>{visible.map((event) => { const payload = event.payload as Record<string, unknown>; const requestId = stringValue(payload.request_id); const roundId = stringValue(payload.round_id); const traceKey = requestId && roundId ? `${requestId}:${roundId}` : null; const digest = stringValue(payload.proposal_digest ?? payload.selected_proposal_digest ?? payload.request_digest); return <tr key={event.event_id} className={selectedTraceKey && traceKey === selectedTraceKey ? "is-selected" : ""}><td className="mono">{event.sequence_number}</td><td><span className={`orc-event-pill ${pillClassFor(event.event_type)}`}><i className="orc-event-pill__icon" aria-hidden="true">{pillIconFor(event.event_type)}</i>{event.event_type}</span></td><td className="mono">{traceKey ? <button className="orchestration-link-button mono" type="button" onClick={() => onSelectTrace(traceKey)} aria-label={`Open event trace for request ${requestId}, round ${roundId}`}>{requestId}<br /><small>{roundId}</small></button> : "None"}</td><td className="mono">{stringValue(payload.orchestrator_id) ?? event.entity_id ?? "None"}</td><td className="mono payload-cell" title={JSON.stringify(payload)}>{eventFact(event.event_type, payload)}</td><td>{digest ? <DigestField value={digest} label="event digest" /> : "None"}</td></tr>; })}</tbody></table></div>}
       {visible.length > 0 && <div className="orchestration-pagination"><span className="annotation mono">Showing latest {visible.length} of {orchestrationEvents.length} local events</span><button className="button button--ghost" type="button" disabled={visible.length >= orchestrationEvents.length} onClick={() => setVisibleLimit((current) => current + 100)}>Show more</button></div>}
     </section>
   );

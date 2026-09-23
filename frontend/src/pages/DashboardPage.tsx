@@ -10,13 +10,11 @@ import { GraphWorkspace } from "../components/graphs/GraphWorkspace";
 import { TrustGraphPlaceholder } from "../components/graphs/TrustGraphPlaceholder";
 import { DeviceStateTable } from "../components/devices/DeviceStateTable";
 import { FindingsStream } from "../components/findings/FindingsStream";
-import { SrepPanel } from "../components/srep/SrepPanel";
 import { SnapshotPanel } from "../components/snapshots/SnapshotPanel";
 import { ProvenancePanel } from "../components/provenance/ProvenancePanel";
 import { EventGapBanner } from "../components/common/EventGapBanner";
 import { BlackboardView } from "../components/blackboard/BlackboardView";
 import { OrchestrationView } from "../components/orchestration/OrchestrationView";
-import { FiveAgentWorkflowView } from "../components/workflow/FiveAgentWorkflowView";
 
 const WS_BASE = import.meta.env.VITE_WS_BASE_URL ?? "ws://localhost:8000/api/v1";
 
@@ -26,7 +24,7 @@ export function DashboardPage() {
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [recoveringReplay, setRecoveringReplay] = useState(true);
-  const [activeView, setActiveView] = useState<"device" | "blackboard" | "orchestration" | "workflow">("device");
+  const [activeView, setActiveView] = useState<"device" | "blackboard" | "orchestration">("device");
   const snapshots = useSnapshots(client);
   const synchronizer = useReplayEvents(client, dispatch, state, WS_BASE);
 
@@ -104,64 +102,88 @@ export function DashboardPage() {
         )}
         <EventGapBanner gap={state.gapDetected} truncated={state.eventHistoryTruncated} />
 
-        <nav className="view-switch" aria-label="Dashboard view" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <div className="segmented-control" role="tablist">
+        <nav className="view-switch" aria-label="Dashboard view">
+          <div
+            className="primary-nav"
+            role="tablist"
+            aria-label="Primary navigation"
+            onKeyDown={(event) => {
+              const order: Array<"device" | "blackboard" | "orchestration"> = ["device", "blackboard", "orchestration"];
+              const currentIndex = order.indexOf(activeView);
+              let nextIndex: number | null = null;
+              if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % order.length;
+              else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + order.length) % order.length;
+              else if (event.key === "Home") nextIndex = 0;
+              else if (event.key === "End") nextIndex = order.length - 1;
+              if (nextIndex !== null) {
+                event.preventDefault();
+                const nextView = order[nextIndex];
+                setActiveView(nextView);
+                // Move focus to the newly selected tab for roving keyboard nav
+                const el = document.querySelector<HTMLElement>(`[data-testid="nav-${nextView === "device" ? "device-view" : nextView}"]`);
+                el?.focus();
+              }
+            }}
+          >
             <button
               role="tab"
               aria-selected={activeView === "device"}
               aria-controls="device-view"
-              className={activeView === "device" ? "is-active" : ""}
+              tabIndex={activeView === "device" ? 0 : -1}
               onClick={() => setActiveView("device")}
               data-testid="nav-device-view"
             >
+              <span className="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35"><rect x="2" y="2.5" width="5" height="5" rx="1"/><rect x="9" y="2.5" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+              </span>
               Device View
             </button>
             <button
               role="tab"
               aria-selected={activeView === "blackboard"}
               aria-controls="blackboard-view"
-              className={activeView === "blackboard" ? "is-active" : ""}
+              tabIndex={activeView === "blackboard" ? 0 : -1}
               onClick={() => setActiveView("blackboard")}
               data-testid="nav-blackboard"
             >
+              <span className="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35"><rect x="3" y="3" width="10" height="3" rx="1"/><rect x="3" y="7" width="10" height="3" rx="1"/><rect x="3" y="11" width="10" height="3" rx="1"/></svg>
+              </span>
               Blackboard
             </button>
             <button
               role="tab"
               aria-selected={activeView === "orchestration"}
               aria-controls="orchestration-view-panel"
-              className={activeView === "orchestration" ? "is-active" : ""}
+              tabIndex={activeView === "orchestration" ? 0 : -1}
               onClick={() => setActiveView("orchestration")}
               data-testid="nav-orchestration"
             >
+              <span className="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35"><circle cx="8" cy="3.5" r="2"/><circle cx="3.5" cy="11.5" r="2"/><circle cx="12.5" cy="11.5" r="2"/><path d="M6.2 4.8 5 9.6M9.8 4.8 11 9.6M5.6 11.5H10.4"/></svg>
+              </span>
               Orchestration
             </button>
-            <button
-              role="tab"
-              aria-selected={activeView === "workflow"}
-              aria-controls="workflow-view-panel"
-              className={activeView === "workflow" ? "is-active" : ""}
-              onClick={() => setActiveView("workflow")}
-              data-testid="nav-workflow"
-            >
-              Five-Agent Workflow
-            </button>
+
           </div>
         </nav>
 
         {activeView === "device" && (
           <div id="device-view" role="tabpanel" aria-label="Device View">
             <section className="runtime-summary" aria-label="Replay summary">
-              <Summary
-                label="Replay state"
-                value={state.isStarting ? "Starting..." : status?.state ?? "Not created"}
-              />
+              <div className="summary-item summary-item--status">
+                <span className="eyebrow">Replay state</span>
+                <div className={`runtime-state runtime-state--${(state.isStarting ? "starting" : status?.state ?? "none").toLowerCase()}`}>
+                  <span className="runtime-state__dot" aria-hidden="true" />
+                  <strong className="mono">{state.isStarting ? "Starting..." : status?.state ?? "Not created"}</strong>
+                </div>
+              </div>
               <Summary label="Windows processed" value={`${status?.windows_processed ?? 0} / ${status?.windows_total ?? "?"}`} />
               <Summary label="Findings emitted" value={String(sumValues(status?.findings_emitted))} />
               <Summary label="Current window" value={status?.last_window_id != null ? String(status.last_window_id + 1) : "-"} />
               <div className="progress-summary">
                 <div><span>Replay progress</span><strong className="mono">{Math.round(progress)}%</strong></div>
-                <div className="progress-track"><i style={{ width: `${progress}%` }} /></div>
+                <div className="progress-track" role="progressbar" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100} aria-label="Replay progress"><i style={{ width: `${progress}%` }} /></div>
               </div>
             </section>
 
@@ -173,7 +195,6 @@ export function DashboardPage() {
 
             <section className="analysis-grid" aria-label="Replay analysis panels">
               <div className="analysis-grid__summary">
-                <SrepPanel srep={state.srep} />
                 <ProvenancePanel />
               </div>
               <DeviceStateTable devices={state.deviceStates} />
@@ -203,11 +224,7 @@ export function DashboardPage() {
           </div>
         )}
 
-        {activeView === "workflow" && (
-          <div id="workflow-view-panel" role="tabpanel" aria-label="Five-Agent Workflow">
-            <FiveAgentWorkflowView />
-          </div>
-        )}
+
       </main>
     </div>
   );

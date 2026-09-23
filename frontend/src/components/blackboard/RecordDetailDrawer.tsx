@@ -50,11 +50,12 @@ export function RecordDetailDrawer({
 
   return (
     <div className="drawer-backdrop" role="dialog" aria-label="Record detail" onClick={onClose} data-testid="record-detail-drawer">
-      <div className="snapshot-drawer" onClick={(e) => e.stopPropagation()} style={{ width: "min(640px, 96vw)" }}>
+      <div className="snapshot-drawer bb-drawer" onClick={(e) => e.stopPropagation()} style={{ width: "min(720px, 96vw)" }}>
         <header className="drawer-heading">
           <div>
-            <span className="eyebrow">Record · quorum read</span>
+            <span className="eyebrow">Record · quorum read · versioned</span>
             <h2 className="mono" style={{ fontSize: "0.78rem", overflowWrap: "anywhere" }}>{recordKey}</h2>
+            <small className="mono" style={{ color: "var(--text-muted)" }}>Provenance-backed versioned record — hash-addressed</small>
           </div>
           <button className="icon-button" type="button" aria-label="Close record detail" onClick={onClose}>×</button>
         </header>
@@ -74,88 +75,127 @@ export function RecordDetailDrawer({
 
         {result && !loading && (
           <>
-            <div className="metric-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <div><span>Read outcome</span><strong className={`mono ${readLabel?.tone ?? ""}`} data-testid="read-outcome">{readLabel?.label ?? outcome}</strong>{readLabel && !hasAuthoritative && <small style={{ display: "block", color: "var(--text-muted)", fontWeight: 400 }}>No authoritative record</small>}</div>
-              <div><span>Requested version</span><strong className="mono">{result.requested_version ?? "latest"}</strong></div>
-            </div>
-
-            {readLabel && !hasAuthoritative ? (
-              <div className="banner-warning" data-testid="read-no-authority">
-                {outcome === "INSUFFICIENT_QUORUM" && "INSUFFICIENT_QUORUM does not expose an authoritative record — even if one replica responded."}
-                {outcome === "INCONSISTENT" && "INCONSISTENT — the UI does not choose one replica value as truth."}
-                {outcome === "NOT_FOUND" && "Quorum confirms absence."}
-                {outcome === "UNAVAILABLE" && "No replica responded; nothing to display as truth."}
-                {outcome === "AUTHORIZATION_REJECTED" && "Authorization rejected."}
+            {/* 4. Commit/read metadata */}
+            <section className="bb-drawer__section bb-drawer__section--outcome" aria-label="Commit metadata">
+              <h3 className="bb-section-heading"><span className="bb-section-icon" aria-hidden="true">◎</span> Commit &amp; read result</h3>
+              <div className="metric-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                <div><span>Read outcome</span><strong className={`mono ${readLabel?.tone ?? ""}`} data-testid="read-outcome">{readLabel?.label ?? outcome}</strong>{readLabel && !hasAuthoritative && <small style={{ display: "block", color: "var(--text-muted)", fontWeight: 400 }}>No authoritative record</small>}</div>
+                <div><span>Requested version</span><strong className="mono">{result.requested_version ?? "latest"}</strong></div>
               </div>
-            ) : null}
+              {readLabel && !hasAuthoritative ? (
+                <div className="banner-warning" data-testid="read-no-authority">
+                  {outcome === "INSUFFICIENT_QUORUM" && "INSUFFICIENT_QUORUM does not expose an authoritative record — even if one replica responded."}
+                  {outcome === "INCONSISTENT" && "INCONSISTENT — the UI does not choose one replica value as truth."}
+                  {outcome === "NOT_FOUND" && "Quorum confirms absence."}
+                  {outcome === "UNAVAILABLE" && "No replica responded; nothing to display as truth."}
+                  {outcome === "AUTHORIZATION_REJECTED" && "Authorization rejected."}
+                </div>
+              ) : null}
+              {outcome === "DEGRADED_CONSISTENT" && (
+                <p className="annotation banner-warning" data-testid="degraded-note">
+                  DEGRADED_CONSISTENT — backend-authoritative majority record shown; some replicas were unavailable/divergent/lagging.
+                  Divergent replicas: <span className="mono">{result.divergent_replicas.join(", ") || "none listed"}</span>.
+                </p>
+              )}
+            </section>
 
             {record ? (
               <>
-                <dl className="metadata-list">
-                  <div><dt>Record ID</dt><dd className="mono" style={{ overflowWrap: "anywhere" }}>{record.record_id}</dd></div>
-                  <div><dt>Record type</dt><dd className="mono">{record.record_type}</dd></div>
-                  <div><dt>Version</dt><dd className="mono">{record.record_version}</dd></div>
-                  <div><dt>Author</dt><dd className="mono" data-testid="record-author">{record.author_id}</dd></div>
-                  <div><dt>Source component</dt><dd className="mono">{record.source_component}</dd></div>
-                  <div><dt>Logical timestamp</dt><dd className="mono">{record.logical_timestamp ?? "—"}</dd></div>
-                  <div><dt>Window ID</dt><dd className="mono">{record.window_id ?? "—"}</dd></div>
-                  <div><dt>Content hash</dt><dd className="mono"><HashField hash={record.content_hash} label="content hash" /></dd></div>
-                </dl>
+                {/* 1. Record identity */}
+                <section className="bb-drawer__section" aria-label="Record identity">
+                  <h3 className="bb-section-heading"><span className="bb-section-icon">◈</span> 1 · Record identity</h3>
+                  <dl className="metadata-list">
+                    <div><dt>Record ID</dt><dd className="mono" style={{ overflowWrap: "anywhere" }}>{record.record_id}</dd></div>
+                    <div><dt>Record key</dt><dd className="mono" style={{ overflowWrap: "anywhere" }}>{record.record_key}</dd></div>
+                  </dl>
+                </section>
 
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  <label>
-                    <span className="eyebrow">Inspect version</span>
-                    <input className="control-input" type="number" min={1} value={selectedVersion ?? ""} placeholder="latest"
-                      onChange={(e) => setSelectedVersion(e.target.value ? Number(e.target.value) : null)} aria-label="Version" data-testid="version-input" />
-                  </label>
-                  <button className="button button--ghost" type="button" onClick={() => setSelectedVersion(null)}>Latest</button>
-                </div>
+                {/* 2. Type/version */}
+                <section className="bb-drawer__section" aria-label="Record type and version">
+                  <h3 className="bb-section-heading"><span className="bb-section-icon">▤</span> 2 · Type &amp; version</h3>
+                  <dl className="metadata-list metadata-list--columns">
+                    <div><dt>Record type</dt><dd className="mono">{record.record_type}</dd></div>
+                    <div><dt>Version</dt><dd className="mono">{record.record_version}</dd></div>
+                    <div><dt>Logical timestamp</dt><dd className="mono">{record.logical_timestamp ?? "—"}</dd></div>
+                    <div><dt>Window ID</dt><dd className="mono">{record.window_id ?? "—"}</dd></div>
+                  </dl>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "end" }}>
+                    <label>
+                      <span className="eyebrow">Inspect version</span>
+                      <input className="control-input" type="number" min={1} value={selectedVersion ?? ""} placeholder="latest"
+                        onChange={(e) => setSelectedVersion(e.target.value ? Number(e.target.value) : null)} aria-label="Version" data-testid="version-input" />
+                    </label>
+                    <button className="button button--ghost" type="button" onClick={() => setSelectedVersion(null)}>Latest</button>
+                  </div>
+                </section>
 
-                <details className="technical-details" open>
-                  <summary>Payload (backend-provided, null preserved)</summary>
-                  <pre data-testid="record-payload">{JSON.stringify(record.payload, null, 2)}</pre>
-                  <p className="annotation">Null semantics preserved: <code>behavior_supported=false</code> ⇒ <code>behavior_risk=null</code> (never 0).</p>
-                </details>
-                <details className="technical-details" open>
-                  <summary>Provenance</summary>
-                  <pre data-testid="record-provenance">{JSON.stringify(record.provenance, null, 2)}</pre>
-                  <p className="annotation">Safe provenance only: author, source_component, session_trace (opaque, not decoded), logical_timestamp, window.</p>
-                </details>
+                {/* 3. Author/source */}
+                <section className="bb-drawer__section" aria-label="Author and source">
+                  <h3 className="bb-section-heading"><span className="bb-section-icon">◐</span> 3 · Author &amp; source</h3>
+                  <dl className="metadata-list">
+                    <div><dt>Author</dt><dd className="mono" data-testid="record-author">{record.author_id}</dd></div>
+                    <div><dt>Source component</dt><dd className="mono">{record.source_component}</dd></div>
+                  </dl>
+                </section>
 
-                {result.observations.length > 0 && (
-                  <details className="technical-details">
-                    <summary>Read observations ({result.observations.length} replicas)</summary>
-                    <div className="bounded-table" style={{ maxHeight: 200 }}>
-                      <table className="data-table">
-                        <thead><tr><th>Replica</th><th>Responded</th><th>Found</th><th>Version</th><th>Hash</th></tr></thead>
-                        <tbody>
-                          {result.observations.map((o) => (
-                            <tr key={o.replica_id}>
-                              <td className="mono">{o.replica_id}</td>
-                              <td>{o.responded ? "Yes" : "No"}</td>
-                              <td>{o.found ? "Yes" : "No"}</td>
-                              <td className="mono">{o.record_version ?? "—"}</td>
-                              <td className="mono">{o.content_hash ? <HashField hash={o.content_hash} /> : "—"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {(result.divergent_replicas.length > 0 || result.unavailable_replicas.length > 0) && (
-                      <p className="annotation">
-                        {result.divergent_replicas.length > 0 && <span>Divergent: <span className="mono">{result.divergent_replicas.join(", ")}</span>. </span>}
-                        {result.unavailable_replicas.length > 0 && <span>Unavailable: <span className="mono">{result.unavailable_replicas.join(", ")}</span>.</span>}
-                      </p>
-                    )}
+                {/* 6. Content hash */}
+                <section className="bb-drawer__section" aria-label="Content hash">
+                  <h3 className="bb-section-heading"><span className="bb-section-icon">#</span> 6 · Content hash</h3>
+                  <div className="mono"><HashField hash={record.content_hash} label="content hash" /></div>
+                  <p className="annotation">Hash-addressed version — short hash is presentation only, full hash copyable.</p>
+                </section>
+
+                {/* 7. Provenance */}
+                <section className="bb-drawer__section" aria-label="Provenance">
+                  <h3 className="bb-section-heading"><span className="bb-section-icon">⧉</span> 7 · Provenance</h3>
+                  <details className="technical-details" open>
+                    <summary>Provenance (backend, safe only)</summary>
+                    <pre data-testid="record-provenance">{JSON.stringify(record.provenance, null, 2)}</pre>
+                    <p className="annotation">Safe provenance only: author, source_component, session_trace (opaque, not decoded), logical_timestamp, window.</p>
                   </details>
+                </section>
+
+                {/* 5. Replica acknowledgements */}
+                {result.observations.length > 0 && (
+                  <section className="bb-drawer__section" aria-label="Replica acknowledgements">
+                    <h3 className="bb-section-heading"><span className="bb-section-icon">⬡</span> 5 · Replica acknowledgements</h3>
+                    <details className="technical-details" open>
+                      <summary>Read observations ({result.observations.length} replicas)</summary>
+                      <div className="bounded-table" style={{ maxHeight: 220 }}>
+                        <table className="data-table">
+                          <thead><tr><th>Replica</th><th>Responded</th><th>Found</th><th>Version</th><th>Hash</th></tr></thead>
+                          <tbody>
+                            {result.observations.map((o) => (
+                              <tr key={o.replica_id}>
+                                <td className="mono">{o.replica_id}</td>
+                                <td>{o.responded ? "Yes" : "No"}</td>
+                                <td>{o.found ? "Yes" : "No"}</td>
+                                <td className="mono">{o.record_version ?? "—"}</td>
+                                <td className="mono">{o.content_hash ? <HashField hash={o.content_hash} /> : "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {(result.divergent_replicas.length > 0 || result.unavailable_replicas.length > 0) && (
+                        <p className="annotation">
+                          {result.divergent_replicas.length > 0 && <span>Divergent: <span className="mono">{result.divergent_replicas.join(", ")}</span>. </span>}
+                          {result.unavailable_replicas.length > 0 && <span>Unavailable: <span className="mono">{result.unavailable_replicas.join(", ")}</span>.</span>}
+                        </p>
+                      )}
+                    </details>
+                  </section>
                 )}
 
-                {outcome === "DEGRADED_CONSISTENT" && (
-                  <p className="annotation banner-warning" data-testid="degraded-note">
-                    DEGRADED_CONSISTENT — backend-authoritative majority record shown; some replicas were unavailable/divergent/lagging.
-                    Divergent replicas: <span className="mono">{result.divergent_replicas.join(", ") || "none listed"}</span>.
-                  </p>
-                )}
+                {/* 8. Technical payload */}
+                <section className="bb-drawer__section" aria-label="Technical payload">
+                  <h3 className="bb-section-heading"><span className="bb-section-icon">≡</span> 8 · Technical payload</h3>
+                  <details className="technical-details" open>
+                    <summary>Payload (backend-provided, null preserved)</summary>
+                    <pre data-testid="record-payload">{JSON.stringify(record.payload, null, 2)}</pre>
+                    <p className="annotation">Null semantics preserved: <code>behavior_supported=false</code> ⇒ <code>behavior_risk=null</code> (never 0).</p>
+                  </details>
+                </section>
               </>
             ) : (
               !error && outcome && <p className="annotation">No record body for outcome <span className="mono">{outcome}</span> — this is authoritative (not an error).</p>

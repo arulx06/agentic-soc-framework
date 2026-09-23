@@ -820,12 +820,15 @@ describe("K. Existing dashboard regression", () => {
     );
     expect(screen.getByTestId("nav-device-view")).toBeInTheDocument();
     expect(screen.getByTestId("nav-blackboard")).toBeInTheDocument();
-    // Default is device view
-    expect(screen.getByText("SREP summary")).toBeInTheDocument();
+    // SREP summary title has been removed from device view
+    expect(screen.queryByText("SREP summary")).not.toBeInTheDocument();
     await user.click(screen.getByTestId("nav-blackboard"));
     expect(screen.getByTestId("blackboard-view")).toBeInTheDocument();
+    // Live activity and operational trace have been removed from blackboard
+    expect(screen.queryByTestId("live-activity")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("operation-trace")).not.toBeInTheDocument();
     await user.click(screen.getByTestId("nav-device-view"));
-    expect(screen.getByText("SREP summary")).toBeInTheDocument();
+    expect(screen.queryByText("SREP summary")).not.toBeInTheDocument();
   });
 });
 

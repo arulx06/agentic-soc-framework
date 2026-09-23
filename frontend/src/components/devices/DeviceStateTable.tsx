@@ -25,18 +25,20 @@ export function DeviceStateTable({ devices }: { devices: DeviceStateV1[] }) {
           <span className="eyebrow">Backend device state</span>
           <h2>Devices <small>{devices.length}</small></h2>
         </div>
-        <input
-          className="control-input table-search"
-          placeholder="Search device…"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          aria-label="Search device"
-        />
+        <div className="table-toolbar">
+          <input
+            className="control-input table-search"
+            placeholder="Search device…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            aria-label="Search device"
+          />
+        </div>
       </header>
-      <div className="bounded-table">
+      <div className="bounded-table devices-table__wrap">
         <table className="data-table" aria-label="Device state table">
           <thead>
-            <tr><th>Entity</th><th>Net obs</th><th>Beh sup</th><th>Beh risk</th><th>Net risk</th><th>Systemic</th></tr>
+            <tr><th>Entity</th><th>Net obs</th><th>Beh sup</th></tr>
           </thead>
           <tbody>
             {sorted.map((device) => (
@@ -48,15 +50,20 @@ export function DeviceStateTable({ devices }: { devices: DeviceStateV1[] }) {
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") setSelected(device.entity_id);
                 }}
+                aria-selected={selected === device.entity_id}
+                data-entity={device.entity_id}
               >
-                <td className="mono">{device.entity_id}</td>
-                <td>{device.network_observed ? "Yes" : "No"}</td>
-                <td>{device.behavior_supported ? "Yes" : "No"}</td>
-                <td className="mono" data-testid={`beh-risk-${device.entity_id}`}>
-                  {formatRisk(device.behavior_risk, device.behavior_supported)}
+                <td className="mono entity-cell">
+                  <span className="entity-id">{device.entity_id}</span>
+                  {(device.is_attacker || device.is_protected_asset) && (
+                    <span className="entity-flags" aria-hidden="true">
+                      {device.is_attacker && <i className="flag-dot flag-dot--attacker" title="Attacker" />}
+                      {device.is_protected_asset && <i className="flag-ring" title="Protected asset" />}
+                    </span>
+                  )}
                 </td>
-                <td className="mono">{formatRisk(device.network_risk, true)}</td>
-                <td className="mono">{formatRisk(device.systemic_risk, true)}</td>
+                <td><span className={`status-chip ${device.network_observed ? "is-yes" : "is-no"}`}>{device.network_observed ? "Yes" : "No"}</span></td>
+                <td><span className={`status-chip ${device.behavior_supported ? "is-yes" : "is-no"}`}>{device.behavior_supported ? "Yes" : "No"}</span></td>
               </tr>
             ))}
           </tbody>
@@ -66,16 +73,20 @@ export function DeviceStateTable({ devices }: { devices: DeviceStateV1[] }) {
       {selectedDevice && (
         <aside className="inline-inspector" aria-label="Selected device details">
           <header>
-            <strong className="mono">{selectedDevice.entity_id}</strong>
+            <div className="inspector-title">
+              <strong className="mono">{selectedDevice.entity_id}</strong>
+              <span className="inspector-badges">
+                {selectedDevice.is_attacker && <span className="badge badge-smoke" style={{ fontSize: "0.60rem" }}>Attacker</span>}
+                {selectedDevice.is_protected_asset && <span className="badge badge-device-only" style={{ fontSize: "0.60rem" }}>Protected</span>}
+              </span>
+            </div>
             <button className="icon-button" onClick={() => setSelected(null)} aria-label="Close device details">×</button>
           </header>
           <dl className="metadata-list metadata-list--columns">
             <Metadata label="Network observed" value={String(selectedDevice.network_observed)} />
             <Metadata label="Behavior observed" value={String(selectedDevice.behavior_observed)} />
             <Metadata label="Behavior supported" value={String(selectedDevice.behavior_supported)} />
-            <Metadata label="Behavior risk" value={formatRisk(selectedDevice.behavior_risk, selectedDevice.behavior_supported)} />
             <Metadata label="Propagated risk" value={formatRisk(selectedDevice.propagated_risk, true)} />
-            <Metadata label="Systemic risk" value={formatRisk(selectedDevice.systemic_risk, true)} />
             <Metadata label="Attacker" value={String(selectedDevice.is_attacker)} />
             <Metadata label="Protected asset" value={String(selectedDevice.is_protected_asset)} />
           </dl>

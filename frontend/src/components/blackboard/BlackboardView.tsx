@@ -13,8 +13,6 @@ import { BlackboardOverview } from "./BlackboardOverview";
 import { ReplicaCards } from "./ReplicaCards";
 import { RecordBrowser } from "./RecordBrowser";
 import { RecordDetailDrawer } from "./RecordDetailDrawer";
-import { LiveActivity } from "./LiveActivity";
-import { OperationTrace } from "./OperationTrace";
 
 const BLACKBOARD_TERMINAL_TYPES = new Set<string>([
   "BLACKBOARD_WRITE_COMMITTED",
@@ -36,7 +34,6 @@ export function BlackboardView({ client }: { client: ApiClient }) {
   const { state } = useReplayContext();
   const bb = useBlackboard(client);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [selectedOpId, setSelectedOpId] = useState<string | null>(null);
   const lastRefreshTriggerRef = useRef<{ seq: number; id: string } | null>(null);
 
   // Bounded frontend memory for Blackboard events: keep latest-N (150) for trace grouping? But global state.events already bounded to 1500.
@@ -76,6 +73,21 @@ export function BlackboardView({ client }: { client: ApiClient }) {
 
   return (
     <div className="blackboard-view" aria-label="Blackboard dashboard" data-testid="blackboard-view" style={{ display: "grid", gap: 14 }}>
+      {/* Blackboard hero — conveys THREE REPLICAS + BACKEND QUORUM + VERSIONED RECORDS + PROVENANCE within seconds */}
+      <section className="bb-hero" aria-label="Blackboard coordination model">
+        <div className="bb-hero__head">
+          <span className="eyebrow">Quorum-replicated coordination · backend authoritative</span>
+          <h2>Blackboard — Three Replicas + Backend Quorum + Versioned Records + Provenance</h2>
+          <p>Three independent SQLite replicas converge only via backend two-of-three quorum/commit rules. The browser never evaluates consistency; it only renders what the backend commits.</p>
+        </div>
+        <div className="bb-hero__pillars" aria-label="Four core properties">
+          <span className="bb-pillar"><i className="bb-pillar__icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="2.5" y="2.5" width="3" height="3" rx="0.7"/><rect x="6.5" y="2.5" width="3" height="3" rx="0.7"/><rect x="10.5" y="2.5" width="3" height="3" rx="0.7"/><path d="M4 5.5v3M8 5.5v3M12 5.5v3"/><rect x="4.5" y="9.5" width="7" height="4" rx="1"/></svg></i>THREE REPLICAS</span>
+          <span className="bb-pillar"><i className="bb-pillar__icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.3"><circle cx="8" cy="8" r="3.2"/><path d="M8 4.8v2M8 9.2v2M4.8 8h2M9.2 8h2"/></svg></i>BACKEND QUORUM</span>
+          <span className="bb-pillar"><i className="bb-pillar__icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.3"><path d="M3 5h10M3 8h10M3 11h10"/><path d="M5 3v10M11 3v10"/></svg></i>VERSIONED RECORDS</span>
+          <span className="bb-pillar"><i className="bb-pillar__icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.3"><circle cx="8" cy="7" r="3"/><path d="M4 12c1-1.6 2.8-2 4-2s3 .4 4 2"/></svg></i>PROVENANCE</span>
+        </div>
+      </section>
+
       {/* Connection / gap / truncated banners — but never wipe REST state */}
       {(gapDetected || truncated || !isLive) && (
         <div className="banner-stack" style={{ display: "grid", gap: 8 }}>
@@ -134,6 +146,7 @@ export function BlackboardView({ client }: { client: ApiClient }) {
         onSelect={(k) => setSelectedKey(k)}
         onChangeFilters={bb.updateFilters}
         filters={bb.filters}
+        selectedKey={selectedKey}
       />
 
       {selectedKey && (
@@ -144,10 +157,6 @@ export function BlackboardView({ client }: { client: ApiClient }) {
           onClose={() => setSelectedKey(null)}
         />
       )}
-
-      <LiveActivity events={state.events} onSelectOperation={(op) => setSelectedOpId(op)} selectedOperationId={selectedOpId} />
-
-      <OperationTrace events={state.events} selectedOperationId={selectedOpId} onSelect={setSelectedOpId} />
 
       {/* Explicit UI states */}
       {(bb.loading && !bb.health && !bb.snapshot) && <div className="compact-empty">Loading Blackboard state…</div>}

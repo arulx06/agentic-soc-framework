@@ -40,10 +40,10 @@ export function OrchestrationOverview({
   const statusTone = health?.status === "ok" ? "tone-committed" : health?.status === "offline" ? "tone-failed" : "tone-partial";
 
   return (
-    <section className="analysis-card orchestration-overview" aria-labelledby="orchestration-overview-title">
+    <section className="analysis-card orchestration-overview orchestration-overview--enhanced" aria-labelledby="orchestration-overview-title">
       <header className="card-heading">
         <div>
-          <span className="eyebrow">Stage 6 backend state / opaque-route adjudication</span>
+          <span className="eyebrow">Stage 6 backend state / opaque-route adjudication · quorum is backend fact</span>
           <h2 id="orchestration-overview-title">Orchestration overview</h2>
         </div>
         <button className="button button--ghost" type="button" onClick={onRefresh} disabled={loading}>
@@ -56,25 +56,33 @@ export function OrchestrationOverview({
 
       {health && (
         <>
-          <div className="metric-grid metric-grid--orchestration">
-            <div><span>Service status</span><strong className={`mono ${statusTone}`}>{health.status}</strong></div>
+          <div className="metric-grid metric-grid--orchestration orchestration-status-grid">
+            <div className={`orchestration-status-pill ${statusTone}`}><span>Service status</span><strong className="mono"><i className="status-dot" aria-hidden="true" /> {health.status}</strong></div>
             <div><span>Orchestrators available</span><strong className="mono">{health.orchestrators_available} / {health.orchestrators_total}</strong></div>
-            <div><span>Backend required quorum</span><strong className="mono">{health.required_quorum}</strong></div>
+            <div><span>Backend required quorum</span><strong className="mono">{health.required_quorum}</strong> <small className="mono" style={{ color: "var(--text-muted)" }}>2-of-3 backend</small></div>
             <div><span>Event namespace</span><strong className="mono">{health.event_namespace}</strong></div>
           </div>
 
-          <details className="technical-details">
-            <summary>Backend instrumentation counters</summary>
+          {(counters.orchestrator_timeouts ?? 0) > 0 || (counters.orchestrator_disagreements ?? 0) > 0 ? (
+            <div className="annotation" style={{ padding: "6px 8px", background: "rgba(251,191,36,0.07)", borderLeft: "2px solid rgba(251,191,36,0.32)", borderRadius: "0 4px 4px 0", marginTop: 8 }}>
+              Backend reports operational variance: timeouts {counters.orchestrator_timeouts ?? 0}, disagreements {counters.orchestrator_disagreements ?? 0}, delays {counters.orchestrator_delays ?? 0} — displayed verbatim, not derived.
+            </div>
+          ) : null}
+
+          <details className="technical-details" open={!health || (counters.decisions_reached ?? 0) < 5}>
+            <summary>Backend instrumentation counters — recent decisions / timeout state</summary>
             <div className="orchestration-counter-grid">
-              {COUNTERS.map((name) => (
-                <div key={name}><span>{name.replaceAll("_", " ")}</span><strong className="mono">{counters[name] ?? "N/A"}</strong></div>
-              ))}
+              {COUNTERS.map((name) => {
+                const val = counters[name];
+                const highlight = (name.includes("timeout") || name.includes("disagreement") || name.includes("no_quorum")) && typeof val === "number" && val > 0;
+                return <div key={name} className={highlight ? "is-highlight" : undefined}><span>{name.replaceAll("_", " ")}</span><strong className="mono">{val ?? "N/A"}</strong></div>;
+              })}
             </div>
           </details>
 
           {Object.keys(latencies).length > 0 && (
             <details className="technical-details" open>
-              <summary>Operational latency</summary>
+              <summary>Operational latency — backend measured</summary>
               <p className="annotation">Operational instrumentation only. These values are not final research benchmark results.</p>
               <div className="bounded-table">
                 <table className="data-table" aria-label="Orchestration operational latency">

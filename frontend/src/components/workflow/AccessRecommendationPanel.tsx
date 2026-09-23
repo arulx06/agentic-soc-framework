@@ -26,8 +26,8 @@ export function AccessRecommendationPanel({ snapshot, entityId }: { snapshot: Wo
   const label = actionLabel(rec.action);
 
   return (
-    <section className="access-panel" aria-label="Access Recommendation" data-testid="access-recommendation-panel">
-      <h4>Trust & Access Controller</h4>
+    <section className="access-panel workflow-stage workflow-stage--prelztaf" aria-label="Access Recommendation" data-testid="access-recommendation-panel">
+      <h4>Trust & Access Controller <span className="stage-badge stage-badge--pre">PRE_LZTAF</span></h4>
       <div className="banner-warning" style={{ fontSize: "0.9em" }} data-testid="pre-lztaf-note">
         Trust & Access Controller is currently operating in <span className="mono">PRE_LZTAF_DEVICE_EVIDENCE</span> mode. Agent Trust vectors, credential controls, revocation and re-admission are not yet implemented.
       </div>

@@ -40,16 +40,17 @@ export function BlackboardOverview({
   const tone = blackboardStatusTone(status);
 
   return (
-    <section className="analysis-card" aria-label="Blackboard overview" data-testid="blackboard-overview">
+    <section className="analysis-card bb-overview" aria-label="Blackboard overview" data-testid="blackboard-overview">
       <header className="card-heading">
         <div>
-          <span className="eyebrow">Blackboard · operational replication state</span>
-          <h2>Overview</h2>
+          <span className="eyebrow">Blackboard · backend-verified replication state</span>
+          <h2>Overview <small className="mono" style={{ color: "var(--text-muted)", fontWeight: 400 }}>quorum-verified, not BFT</small></h2>
         </div>
         <button className="button button--ghost" type="button" onClick={onRefresh} disabled={loading} aria-label="Refresh Blackboard overview">
           {loading ? "Refreshing…" : "Refresh"}
         </button>
       </header>
+      <p className="annotation" style={{ marginTop: -6, fontSize: "0.68rem" }}>Backend is authoritative for commit/consistency. Numbers below are displayed verbatim; no quorum is evaluated in the browser.</p>
 
       {error && (
         <div role="alert" className="banner-warning" data-testid="blackboard-error">
